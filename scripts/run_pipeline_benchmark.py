@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 from jev_sees.color import dominant_color
 from jev_sees.geometry import cluster_depth, depth_to_meters
 from jev_sees.paths import clip_weight, mobile_sam_weight, robo_root, yolo_weight
+from jev_sees.perceive import perceive_rgb, perceive_rgbd
 from jev_sees.runtime import VisionRuntime
 
 ASSETS = ROOT / "assets"
@@ -46,6 +47,27 @@ def _timed(fn):
     started = time.perf_counter()
     value = fn()
     return value, round((time.perf_counter() - started) * 1000.0, 1)
+
+
+def _pipeline_summary(runtime: VisionRuntime, rgb: np.ndarray) -> dict:
+    """Time the RGB product path: YOLO boxes, CLIP color, then the body-color heuristic."""
+
+    observations, elapsed = _timed(lambda: perceive_rgb(runtime, rgb))
+    return {
+        "latency_ms": elapsed,
+        "count": len(observations),
+        "objects": [
+            {
+                "label": item["label"],
+                "confidence": round(float(item["confidence"]), 4),
+                "color": (item.get("attributes") or {}).get("color"),
+                "clip_color": (item.get("attributes") or {}).get("clip_color"),
+                "dominant_color": (item.get("attributes") or {}).get("dominant_color"),
+                "bbox_xyxy": item["bbox_xyxy"],
+            }
+            for item in observations
+        ],
+    }
 
 
 def _detect_summary(runtime: VisionRuntime, rgb: np.ndarray, confidence: float):
@@ -116,7 +138,7 @@ def main() -> int:
         "note": (
             "Development comparison on two public RGB images and three wrist RGB-D frames "
             "that contain household objects. Not a COCO mAP evaluation. "
-            "RGB detector latency is measured after one warmup prediction, so it excludes weight loading."
+            "RGB detector latency and the RGB product path (perceive_rgb) are measured after one warmup, so they exclude weight loading."
         ),
         "weights": {
             "yolov8s_world": Path(yolo_weight("s") or "").name,
@@ -137,6 +159,12 @@ def main() -> int:
         report["rgb"][f"yolov8{size}_world"] = {
             "bus.jpg": _detect_summary(runtime, bus, 0.25),
             "zidane.jpg": _detect_summary(runtime, zidane, 0.25),
+        }
+        # Warm the color encoder, then time the same path the SDK uses.
+        perceive_rgb(runtime, bus)
+        report["rgb"][f"yolov8{size}_world_pipeline"] = {
+            "bus.jpg": _pipeline_summary(runtime, bus),
+            "zidane.jpg": _pipeline_summary(runtime, zidane),
         }
         del runtime
         if device == "cuda":
@@ -176,8 +204,6 @@ def main() -> int:
                 "depth_clusters": {"count": len(masks), "latency_ms": cluster_ms},
             }
         )
-    from jev_sees.perceive import perceive_rgbd
-
     detectors = {}
     for size in ("s", "l"):
         detectors[size] = VisionRuntime(yolo_path=yolo_weight(size), vocabulary=HOUSEHOLD, device=device)
@@ -220,6 +246,7 @@ def main() -> int:
     DOCS.mkdir(parents=True, exist_ok=True)
     destination = DOCS / "pipeline_benchmark.json"
     destination.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    _write_latency_chart(report, DOCS / "pipeline_latency.png")
     print(destination)
     print(json.dumps(report["selection"], indent=2))
     return 0
@@ -273,6 +300,79 @@ def _selection(report: dict) -> dict:
             "MobileSAM, when it runs, returns masks without class names, so it cannot answer a closed question alone."
         ),
     }
+
+
+def _write_latency_chart(report: dict, path: Path) -> None:
+    """Line chart of boxes against the product path. PIL only."""
+
+    rgb = report.get("rgb") or {}
+    frames = report.get("rgbd") or []
+    labels = ["YOLOv8s", "YOLOv8l"]
+    boxes: list[float | None] = []
+    pipeline: list[float | None] = []
+    clusters: list[float | None] = [None, None]
+    for size in ("s", "l"):
+        detector = rgb.get(f"yolov8{size}_world", {}).get("bus.jpg")
+        full = rgb.get(f"yolov8{size}_world_pipeline", {}).get("bus.jpg")
+        boxes.append(float(detector["latency_ms"]) if detector else None)
+        pipeline.append(float(full["latency_ms"]) if full else None)
+    for frame in frames:
+        stem = Path(str(frame.get("rgb") or "frame")).stem.removesuffix("_rgb")
+        labels.append(f"wrist {stem.rsplit('_', 1)[-1]}")
+        boxes.append(float(frame["yolov8s_world_conf_0.25"]["latency_ms"]))
+        pipeline.append(float(frame["cluster_clip_yolo_l"]["latency_ms"]))
+        clusters.append(float(frame["depth_clusters"]["latency_ms"]))
+    if not any(value is not None for value in pipeline):
+        return
+    from PIL import ImageDraw
+    from PIL import ImageFont
+
+    font_path = Path(r"C:\Windows\Fonts\arial.ttf")
+    font = ImageFont.truetype(str(font_path), 16) if font_path.is_file() else ImageFont.load_default()
+    small = ImageFont.truetype(str(font_path), 13) if font_path.is_file() else font
+    width, height = 920, 420
+    left, right, top, bottom = 64, 24, 56, 48
+    image = Image.new("RGB", (width, height), (255, 255, 255))
+    draw = ImageDraw.Draw(image)
+    peak = max(value for value in boxes + pipeline + clusters if value is not None)
+    peak = max(peak * 1.12, 1.0)
+    count = len(labels)
+
+    def xy(index: int, value: float) -> tuple[int, int]:
+        x = left + (width - left - right) * index / max(count - 1, 1)
+        y = top + (height - top - bottom) * (1.0 - value / peak)
+        return int(round(x)), int(round(y))
+
+    for tick in (0, 100, 200, 300, 400):
+        if tick > peak:
+            continue
+        _, y = xy(0, tick)
+        draw.line((left, y, width - right, y), fill=(230, 230, 230))
+        draw.text((8, y - 8), str(tick), fill=(90, 90, 90), font=small)
+    series = (
+        ("Boxes", boxes, (90, 140, 170)),
+        ("Clusters", clusters, (40, 150, 110)),
+        ("Full path", pipeline, (32, 86, 140)),
+    )
+    for name, values, color in series:
+        points = [(index, value) for index, value in enumerate(values) if value is not None]
+        if len(points) >= 2:
+            draw.line([xy(index, value) for index, value in points], fill=color, width=3)
+        for index, value in points:
+            x, y = xy(index, value)
+            draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill=color)
+            draw.text((x - 12, y - 18), f"{value:.0f}", fill=color, font=small)
+    for index, label in enumerate(labels):
+        x, _ = xy(index, 0)
+        draw.text((x - 28, height - 32), label, fill=(30, 30, 30), font=small)
+    draw.text((left, 16), "Warm latency, milliseconds", fill=(20, 20, 20), font=font)
+    legend_x = width - 280
+    for offset, (name, _, color) in enumerate(series):
+        y = 18
+        x = legend_x + offset * 92
+        draw.line((x, y + 6, x + 16, y + 6), fill=color, width=3)
+        draw.text((x + 20, y), name, fill=(30, 30, 30), font=small)
+    image.save(path)
 
 
 if __name__ == "__main__":

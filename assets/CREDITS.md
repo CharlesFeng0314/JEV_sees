@@ -7,15 +7,17 @@
 - https://github.com/ultralytics/assets/releases/download/v0.0.0/bus.jpg
 - https://github.com/ultralytics/assets/releases/download/v0.0.0/zidane.jpg
 
-They are included so the README demo can run without downloading them again.
+They are included so the picture demo can run without downloading them again.
+
+## Wrist RGB-D frames
+
+`rgbd/frame_06.png`, `rgbd/frame_13.png`, and `rgbd/frame_15.png` are wrist-camera frames from the tabletop run used for the RGB-D comparison. Depth arrays stay in the robot project and are not in this repository. The frames are the ones timed in `docs/pipeline_benchmark.json`.
 
 ## Video
 
-`docking.mp4` is a five-second excerpt (150 frames, 30 fps, 480×270) from a NASA Image and Video Library clip:
+`traffic.mp4` is the Intel IoT sample `person-bicycle-car-detection.mp4`, used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/):
 
-- Title: Progress 92 Cargo Spacecraft Docks To Space Station
-- Date: 5 July 2025
-- NASA ID: `iss073m261862044_Progress_92_Cargo_Spacecraft_Docks_To_Space_Station_250705`
-- Source: https://images.nasa.gov/details/iss073m261862044_Progress_92_Cargo_Spacecraft_Docks_To_Space_Station_250705
+- https://github.com/intel-iot-devkit/sample-videos
+- File: https://github.com/intel-iot-devkit/sample-videos/blob/master/person-bicycle-car-detection.mp4
 
-NASA media in that library is in the public domain unless the page says otherwise. The excerpt starts about 38 minutes and 47 seconds into the preview file, where the Progress vehicle is beside the station structure. The full broadcast is not included.
+The street demo uses the stretch just after 42 seconds, where a car, a bicycle, and pedestrians are in frame together. `docs/demo.gif` is an annotated excerpt of that stretch.

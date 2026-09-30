@@ -1,7 +1,7 @@
 {
   "device": "cuda",
   "gpu": "NVIDIA GeForce RTX 4070 Ti SUPER",
-  "note": "Development comparison on two public RGB images and three wrist RGB-D frames that contain household objects. Not a COCO mAP evaluation. RGB detector latency is measured after one warmup prediction, so it excludes weight loading.",
+  "note": "Development comparison on two public RGB images and three wrist RGB-D frames that contain household objects. Not a COCO mAP evaluation. RGB detector latency and the RGB product path (perceive_rgb) are measured after one warmup, so they exclude weight loading.",
   "weights": {
     "yolov8s_world": "yolov8s-worldv2.pt",
     "yolov8l_world": "yolov8l-worldv2.pt",
@@ -11,7 +11,7 @@
   "rgb": {
     "yolov8s_world": {
       "bus.jpg": {
-        "latency_ms": 21.5,
+        "latency_ms": 19.5,
         "count": 5,
         "labels": [
           "bus",
@@ -71,7 +71,7 @@
         ]
       },
       "zidane.jpg": {
-        "latency_ms": 23.5,
+        "latency_ms": 20.8,
         "count": 2,
         "labels": [
           "person"
@@ -100,9 +100,114 @@
         ]
       }
     },
+    "yolov8s_world_pipeline": {
+      "bus.jpg": {
+        "latency_ms": 92.4,
+        "count": 5,
+        "objects": [
+          {
+            "label": "person",
+            "confidence": 0.9173,
+            "color": "white",
+            "clip_color": "white",
+            "dominant_color": "gray",
+            "bbox_xyxy": [
+              51,
+              398,
+              247,
+              903
+            ]
+          },
+          {
+            "label": "person",
+            "confidence": 0.9057,
+            "color": "blue",
+            "clip_color": "blue",
+            "dominant_color": "blue",
+            "bbox_xyxy": [
+              668,
+              386,
+              810,
+              879
+            ]
+          },
+          {
+            "label": "person",
+            "confidence": 0.8835,
+            "color": "blue",
+            "clip_color": "red",
+            "dominant_color": "blue",
+            "bbox_xyxy": [
+              223,
+              406,
+              345,
+              861
+            ]
+          },
+          {
+            "label": "bus",
+            "confidence": 0.8682,
+            "color": "blue",
+            "clip_color": "green",
+            "dominant_color": "blue",
+            "bbox_xyxy": [
+              3,
+              231,
+              807,
+              745
+            ]
+          },
+          {
+            "label": "person",
+            "confidence": 0.6334,
+            "color": "blue",
+            "clip_color": "blue",
+            "dominant_color": "blue",
+            "bbox_xyxy": [
+              0,
+              484,
+              79,
+              886
+            ]
+          }
+        ]
+      },
+      "zidane.jpg": {
+        "latency_ms": 102.9,
+        "count": 2,
+        "objects": [
+          {
+            "label": "person",
+            "confidence": 0.8338,
+            "color": "red",
+            "clip_color": "orange",
+            "dominant_color": "red",
+            "bbox_xyxy": [
+              112,
+              201,
+              1112,
+              720
+            ]
+          },
+          {
+            "label": "person",
+            "confidence": 0.7258,
+            "color": "red",
+            "clip_color": "black",
+            "dominant_color": "red",
+            "bbox_xyxy": [
+              746,
+              40,
+              1135,
+              720
+            ]
+          }
+        ]
+      }
+    },
     "yolov8l_world": {
       "bus.jpg": {
-        "latency_ms": 17.7,
+        "latency_ms": 18.8,
         "count": 5,
         "labels": [
           "bus",
@@ -162,7 +267,7 @@
         ]
       },
       "zidane.jpg": {
-        "latency_ms": 20.8,
+        "latency_ms": 22.0,
         "count": 2,
         "labels": [
           "person"
@@ -191,10 +296,115 @@
         ]
       }
     },
+    "yolov8l_world_pipeline": {
+      "bus.jpg": {
+        "latency_ms": 98.7,
+        "count": 5,
+        "objects": [
+          {
+            "label": "bus",
+            "confidence": 0.9387,
+            "color": "blue",
+            "clip_color": "green",
+            "dominant_color": "blue",
+            "bbox_xyxy": [
+              0,
+              231,
+              807,
+              752
+            ]
+          },
+          {
+            "label": "person",
+            "confidence": 0.938,
+            "color": "blue",
+            "clip_color": "red",
+            "dominant_color": "blue",
+            "bbox_xyxy": [
+              223,
+              407,
+              345,
+              860
+            ]
+          },
+          {
+            "label": "person",
+            "confidence": 0.9225,
+            "color": "blue",
+            "clip_color": "blue",
+            "dominant_color": "blue",
+            "bbox_xyxy": [
+              668,
+              392,
+              810,
+              883
+            ]
+          },
+          {
+            "label": "person",
+            "confidence": 0.9179,
+            "color": "blue",
+            "clip_color": "blue",
+            "dominant_color": "gray",
+            "bbox_xyxy": [
+              50,
+              399,
+              248,
+              902
+            ]
+          },
+          {
+            "label": "person",
+            "confidence": 0.7747,
+            "color": "blue",
+            "clip_color": "black",
+            "dominant_color": "blue",
+            "bbox_xyxy": [
+              0,
+              429,
+              79,
+              1077
+            ]
+          }
+        ]
+      },
+      "zidane.jpg": {
+        "latency_ms": 98.2,
+        "count": 2,
+        "objects": [
+          {
+            "label": "person",
+            "confidence": 0.9066,
+            "color": "red",
+            "clip_color": "orange",
+            "dominant_color": "red",
+            "bbox_xyxy": [
+              118,
+              200,
+              1118,
+              720
+            ]
+          },
+          {
+            "label": "person",
+            "confidence": 0.8132,
+            "color": "red",
+            "clip_color": "black",
+            "dominant_color": "red",
+            "bbox_xyxy": [
+              745,
+              38,
+              1146,
+              719
+            ]
+          }
+        ]
+      }
+    },
     "bus_color": {
       "clip_color": "green",
       "dominant_color": "blue",
-      "clip_latency_ms": 1735.0,
+      "clip_latency_ms": 1769.0,
       "crop_bbox_xyxy": [
         0.1,
         231.2,
@@ -204,7 +414,7 @@
     },
     "mobile_sam_bus": {
       "ok": true,
-      "latency_ms": 1652.9,
+      "latency_ms": 1698.4,
       "mask_count": 83,
       "category_names": [],
       "names_objects": false
@@ -216,10 +426,10 @@
       "depth": "1790672865144606100_6_depth.npy",
       "depth_clusters": {
         "count": 5,
-        "latency_ms": 223.2
+        "latency_ms": 230.4
       },
       "yolov8s_world_conf_0.25": {
-        "latency_ms": 10.3,
+        "latency_ms": 11.4,
         "count": 1,
         "labels": [
           "soup can"
@@ -238,7 +448,7 @@
         ]
       },
       "yolov8s_world_conf_0.02": {
-        "latency_ms": 12.7,
+        "latency_ms": 10.4,
         "count": 2,
         "labels": [
           "soup can"
@@ -267,7 +477,7 @@
         ]
       },
       "yolov8l_world_conf_0.25": {
-        "latency_ms": 19.7,
+        "latency_ms": 14.0,
         "count": 1,
         "labels": [
           "soup can"
@@ -286,7 +496,7 @@
         ]
       },
       "yolov8l_world_conf_0.02": {
-        "latency_ms": 18.7,
+        "latency_ms": 14.5,
         "count": 2,
         "labels": [
           "soup can"
@@ -315,7 +525,7 @@
         ]
       },
       "cluster_clip_yolo_l": {
-        "latency_ms": 386.0,
+        "latency_ms": 378.9,
         "count": 5,
         "objects": [
           {
@@ -381,34 +591,34 @@
       "depth": "1790672907604492800_13_depth.npy",
       "depth_clusters": {
         "count": 4,
-        "latency_ms": 243.4
+        "latency_ms": 246.5
       },
       "yolov8s_world_conf_0.25": {
-        "latency_ms": 11.7,
+        "latency_ms": 12.6,
         "count": 0,
         "labels": [],
         "detections": []
       },
       "yolov8s_world_conf_0.02": {
-        "latency_ms": 11.0,
+        "latency_ms": 11.1,
         "count": 0,
         "labels": [],
         "detections": []
       },
       "yolov8l_world_conf_0.25": {
-        "latency_ms": 15.2,
+        "latency_ms": 16.5,
         "count": 0,
         "labels": [],
         "detections": []
       },
       "yolov8l_world_conf_0.02": {
-        "latency_ms": 15.0,
+        "latency_ms": 16.8,
         "count": 0,
         "labels": [],
         "detections": []
       },
       "cluster_clip_yolo_l": {
-        "latency_ms": 434.6,
+        "latency_ms": 408.4,
         "count": 4,
         "objects": [
           {
@@ -463,10 +673,10 @@
       "depth": "1790672919993928700_15_depth.npy",
       "depth_clusters": {
         "count": 5,
-        "latency_ms": 217.6
+        "latency_ms": 209.4
       },
       "yolov8s_world_conf_0.25": {
-        "latency_ms": 11.7,
+        "latency_ms": 10.9,
         "count": 1,
         "labels": [
           "soup can"
@@ -485,7 +695,7 @@
         ]
       },
       "yolov8s_world_conf_0.02": {
-        "latency_ms": 13.5,
+        "latency_ms": 12.0,
         "count": 2,
         "labels": [
           "soup can"
@@ -514,7 +724,7 @@
         ]
       },
       "yolov8l_world_conf_0.25": {
-        "latency_ms": 15.6,
+        "latency_ms": 15.4,
         "count": 1,
         "labels": [
           "soup can"
@@ -533,7 +743,7 @@
         ]
       },
       "yolov8l_world_conf_0.02": {
-        "latency_ms": 18.5,
+        "latency_ms": 14.0,
         "count": 1,
         "labels": [
           "soup can"
@@ -552,7 +762,7 @@
         ]
       },
       "cluster_clip_yolo_l": {
-        "latency_ms": 389.6,
+        "latency_ms": 388.2,
         "count": 5,
         "objects": [
           {
@@ -620,14 +830,14 @@
     "small": {
       "bus": true,
       "person": true,
-      "bus_ms": 21.5,
-      "person_ms": 23.5
+      "bus_ms": 19.5,
+      "person_ms": 20.8
     },
     "large": {
       "bus": true,
       "person": true,
-      "bus_ms": 17.7,
-      "person_ms": 20.8
+      "bus_ms": 18.8,
+      "person_ms": 22.0
     },
     "rgbd_reason": "Depth clustering decides how many objects exist. CLIP names each cluster. YOLO-World is attached only when a box agrees with a cluster. MobileSAM, when it runs, returns masks without class names, so it cannot answer a closed question alone."
   }
