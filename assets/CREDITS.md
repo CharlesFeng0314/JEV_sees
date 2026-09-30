@@ -11,7 +11,7 @@ They are included so the picture demo can run without downloading them again.
 
 ## Wrist RGB-D frames
 
-`rgbd/frame_06.png`, `rgbd/frame_13.png`, and `rgbd/frame_15.png` are wrist-camera frames from the tabletop run used for the RGB-D comparison. Depth arrays stay in the robot project and are not in this repository. The frames are the ones timed in `docs/pipeline_benchmark.json`.
+`frame_06.png`, `frame_13.png`, and `frame_15.png` are wrist-camera frames from the tabletop run used for the RGB-D comparison. Depth arrays stay in the robot project and are not in this repository. The frames are the ones timed in `pipeline_benchmark.json`.
 
 ## Video
 
@@ -20,4 +20,4 @@ They are included so the picture demo can run without downloading them again.
 - https://github.com/intel-iot-devkit/sample-videos
 - File: https://github.com/intel-iot-devkit/sample-videos/blob/master/person-bicycle-car-detection.mp4
 
-The street demo uses the stretch just after 42 seconds, where a car, a bicycle, and pedestrians are in frame together. `docs/demo.gif` is an annotated excerpt of that stretch.
+The street demo uses the stretch just after 42 seconds, where a car, a bicycle, and pedestrians are in frame together. `demo.gif` is an annotated excerpt of that stretch.

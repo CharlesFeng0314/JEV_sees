@@ -24,7 +24,6 @@ from jev_sees.perceive import perceive_rgb, perceive_rgbd
 from jev_sees.runtime import VisionRuntime
 
 ASSETS = ROOT / "assets"
-DOCS = ROOT / "docs"
 WRIST_INTRINSICS = {"fx": 549.7494505734561, "fy": 549.7494505734561, "cx": 320.0, "cy": 240.0}
 HOUSEHOLD = [
     "bowl",
@@ -243,10 +242,10 @@ def main() -> int:
         torch.cuda.empty_cache()
 
     report["selection"] = _selection(report)
-    DOCS.mkdir(parents=True, exist_ok=True)
-    destination = DOCS / "pipeline_benchmark.json"
+    ASSETS.mkdir(parents=True, exist_ok=True)
+    destination = ASSETS / "pipeline_benchmark.json"
     destination.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    _write_latency_chart(report, DOCS / "pipeline_latency.png")
+    _write_latency_chart(report, ASSETS / "pipeline_latency.png")
     print(destination)
     print(json.dumps(report["selection"], indent=2))
     return 0

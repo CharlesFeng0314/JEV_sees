@@ -7,3 +7,5 @@ __pycache__/
 *.pth
 .idea/
 .vscode/
+scripts/
+tests/

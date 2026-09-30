@@ -19,17 +19,15 @@ import numpy as np
 from PIL import Image
 
 from jev_sees import Sees
-from jev_sees.tracking import box_gap
 
 ROOT = Path(__file__).resolve().parents[1]
 VIDEO = ROOT / "assets" / "traffic.mp4"
-GIF = ROOT / "docs" / "demo.gif"
+GIF = ROOT / "assets" / "demo.gif"
 VOCABULARY = ["person", "bicycle", "car", "motorcycle", "bus", "truck", "traffic light"]
 ACTORS = {"person", "bicycle", "car", "motorcycle", "bus", "truck"}
 # The objects share the frame from just after 42s through about 50s at 12 fps.
 WINDOW = (504, 600)
 ASK_EVERY = 6
-MAX_ACTORS = 8
 GIF_WIDTH = 480
 VEHICLES = {"car", "bus", "truck", "motorcycle"}
 TITLE = "chance (%) of person having car accident"
@@ -97,37 +95,16 @@ def _ask(sees: Sees, questions: dict):
 
 
 def _questions(tracks: list[dict]) -> dict[str, dict[str, str]]:
-    people = [item for item in tracks if item.get("label") == "person" and item.get("bbox_xyxy")]
-    vehicles = [item for item in tracks if item.get("label") in VEHICLES and item.get("bbox_xyxy")]
-    people.sort(key=lambda item: _nearest_gap(item, vehicles or people))
     questions = {}
-    for item in people[:MAX_ACTORS]:
+    for item in tracks:
+        if item.get("label") != "person" or not item.get("object_id"):
+            continue
         name = f"{item['object_id']} ({item['label']})"
-        vehicle = _nearest(item, vehicles)
-        if vehicle is None:
-            hazard = "no car is visible"
-        else:
-            gap = box_gap(item["bbox_xyxy"], vehicle["bbox_xyxy"])
-            hazard = f"the nearest vehicle is {vehicle['object_id']} ({vehicle['label']}), box gap {gap:.0f}px"
         questions[str(item["object_id"])] = {
-            "yes": f"{name} is in a car accident now, or a car is about to hit them. {hazard}.",
-            "no": f"{name} is clear of every car. {hazard}.",
+            "yes": f"{name} is in a car accident now, or a car is about to hit them.",
+            "no": f"{name} is clear of every car.",
         }
     return questions
-
-
-def _nearest(item: dict, actors: list[dict]) -> dict | None:
-    others = [other for other in actors if other.get("object_id") != item.get("object_id")]
-    if not others:
-        return None
-    return min(others, key=lambda other: box_gap(item["bbox_xyxy"], other["bbox_xyxy"]))
-
-
-def _nearest_gap(item: dict, actors: list[dict]) -> float:
-    other = _nearest(item, actors)
-    if other is None:
-        return 1e9
-    return box_gap(item["bbox_xyxy"], other["bbox_xyxy"])
 
 
 def _print_tracks(index: int, tracks: list[dict]) -> None:
