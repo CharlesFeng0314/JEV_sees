@@ -4,7 +4,7 @@
 
 ### Give JEV eyes.
 
-**JEV is fast, structured, and built to make decisions. It just cannot see — officially. JEV Sees changes that.**
+**JEV is fast, structured, and built to make decisions.**
 
 Connect an image, a video stream, or an RGB-D camera to JEV, and suddenly the same judgment engine can work on the visual world: identify what matters, estimate risk, score a situation, or judge many visible objects at once.
 
