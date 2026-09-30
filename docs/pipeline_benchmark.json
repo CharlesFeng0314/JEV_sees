@@ -1,0 +1,634 @@
+{
+  "device": "cuda",
+  "gpu": "NVIDIA GeForce RTX 4070 Ti SUPER",
+  "note": "Development comparison on two public RGB images and three wrist RGB-D frames that contain household objects. Not a COCO mAP evaluation. RGB detector latency is measured after one warmup prediction, so it excludes weight loading.",
+  "weights": {
+    "yolov8s_world": "yolov8s-worldv2.pt",
+    "yolov8l_world": "yolov8l-worldv2.pt",
+    "clip": "ViT-B-32.pt",
+    "mobile_sam": "mobile_sam.pt"
+  },
+  "rgb": {
+    "yolov8s_world": {
+      "bus.jpg": {
+        "latency_ms": 21.5,
+        "count": 5,
+        "labels": [
+          "bus",
+          "person"
+        ],
+        "detections": [
+          {
+            "label": "person",
+            "score": 0.9173,
+            "bbox_xyxy": [
+              50.7,
+              398.3,
+              247.0,
+              903.3
+            ]
+          },
+          {
+            "label": "person",
+            "score": 0.9057,
+            "bbox_xyxy": [
+              667.8,
+              386.5,
+              810.0,
+              878.6
+            ]
+          },
+          {
+            "label": "person",
+            "score": 0.8835,
+            "bbox_xyxy": [
+              223.3,
+              406.4,
+              344.9,
+              860.7
+            ]
+          },
+          {
+            "label": "bus",
+            "score": 0.8682,
+            "bbox_xyxy": [
+              2.8,
+              231.1,
+              806.9,
+              744.6
+            ]
+          },
+          {
+            "label": "person",
+            "score": 0.6334,
+            "bbox_xyxy": [
+              0.0,
+              484.4,
+              78.9,
+              886.2
+            ]
+          }
+        ]
+      },
+      "zidane.jpg": {
+        "latency_ms": 23.5,
+        "count": 2,
+        "labels": [
+          "person"
+        ],
+        "detections": [
+          {
+            "label": "person",
+            "score": 0.8338,
+            "bbox_xyxy": [
+              112.4,
+              201.0,
+              1112.5,
+              720.0
+            ]
+          },
+          {
+            "label": "person",
+            "score": 0.7258,
+            "bbox_xyxy": [
+              745.9,
+              40.3,
+              1134.7,
+              720.0
+            ]
+          }
+        ]
+      }
+    },
+    "yolov8l_world": {
+      "bus.jpg": {
+        "latency_ms": 17.7,
+        "count": 5,
+        "labels": [
+          "bus",
+          "person"
+        ],
+        "detections": [
+          {
+            "label": "bus",
+            "score": 0.9387,
+            "bbox_xyxy": [
+              0.1,
+              231.2,
+              806.8,
+              751.5
+            ]
+          },
+          {
+            "label": "person",
+            "score": 0.938,
+            "bbox_xyxy": [
+              223.4,
+              407.2,
+              345.4,
+              859.6
+            ]
+          },
+          {
+            "label": "person",
+            "score": 0.9225,
+            "bbox_xyxy": [
+              668.4,
+              391.6,
+              810.0,
+              882.9
+            ]
+          },
+          {
+            "label": "person",
+            "score": 0.9179,
+            "bbox_xyxy": [
+              49.6,
+              398.6,
+              247.6,
+              902.3
+            ]
+          },
+          {
+            "label": "person",
+            "score": 0.7747,
+            "bbox_xyxy": [
+              0.0,
+              428.9,
+              78.9,
+              1076.6
+            ]
+          }
+        ]
+      },
+      "zidane.jpg": {
+        "latency_ms": 20.8,
+        "count": 2,
+        "labels": [
+          "person"
+        ],
+        "detections": [
+          {
+            "label": "person",
+            "score": 0.9066,
+            "bbox_xyxy": [
+              117.5,
+              200.5,
+              1118.2,
+              720.0
+            ]
+          },
+          {
+            "label": "person",
+            "score": 0.8132,
+            "bbox_xyxy": [
+              745.1,
+              38.5,
+              1145.6,
+              719.2
+            ]
+          }
+        ]
+      }
+    },
+    "bus_color": {
+      "clip_color": "green",
+      "dominant_color": "blue",
+      "clip_latency_ms": 1735.0,
+      "crop_bbox_xyxy": [
+        0.1,
+        231.2,
+        806.8,
+        751.5
+      ]
+    },
+    "mobile_sam_bus": {
+      "ok": true,
+      "latency_ms": 1652.9,
+      "mask_count": 83,
+      "category_names": [],
+      "names_objects": false
+    }
+  },
+  "rgbd": [
+    {
+      "rgb": "1790672865144606100_6_rgb.png",
+      "depth": "1790672865144606100_6_depth.npy",
+      "depth_clusters": {
+        "count": 5,
+        "latency_ms": 223.2
+      },
+      "yolov8s_world_conf_0.25": {
+        "latency_ms": 10.3,
+        "count": 1,
+        "labels": [
+          "soup can"
+        ],
+        "detections": [
+          {
+            "label": "soup can",
+            "score": 0.4691,
+            "bbox_xyxy": [
+              409.3,
+              361.6,
+              455.6,
+              423.4
+            ]
+          }
+        ]
+      },
+      "yolov8s_world_conf_0.02": {
+        "latency_ms": 12.7,
+        "count": 2,
+        "labels": [
+          "soup can"
+        ],
+        "detections": [
+          {
+            "label": "soup can",
+            "score": 0.4691,
+            "bbox_xyxy": [
+              409.3,
+              361.6,
+              455.6,
+              423.4
+            ]
+          },
+          {
+            "label": "soup can",
+            "score": 0.1015,
+            "bbox_xyxy": [
+              187.8,
+              406.7,
+              287.5,
+              480.0
+            ]
+          }
+        ]
+      },
+      "yolov8l_world_conf_0.25": {
+        "latency_ms": 19.7,
+        "count": 1,
+        "labels": [
+          "soup can"
+        ],
+        "detections": [
+          {
+            "label": "soup can",
+            "score": 0.4911,
+            "bbox_xyxy": [
+              409.1,
+              360.9,
+              456.2,
+              422.4
+            ]
+          }
+        ]
+      },
+      "yolov8l_world_conf_0.02": {
+        "latency_ms": 18.7,
+        "count": 2,
+        "labels": [
+          "soup can"
+        ],
+        "detections": [
+          {
+            "label": "soup can",
+            "score": 0.4911,
+            "bbox_xyxy": [
+              409.1,
+              360.9,
+              456.2,
+              422.4
+            ]
+          },
+          {
+            "label": "soup can",
+            "score": 0.021,
+            "bbox_xyxy": [
+              189.9,
+              406.6,
+              286.4,
+              479.8
+            ]
+          }
+        ]
+      },
+      "cluster_clip_yolo_l": {
+        "latency_ms": 386.0,
+        "count": 5,
+        "objects": [
+          {
+            "label": "cube",
+            "confidence": 0.6582,
+            "bbox_xyxy": [
+              376,
+              0,
+              640,
+              291
+            ],
+            "detector_label": null
+          },
+          {
+            "label": "cube",
+            "confidence": 0.4734,
+            "bbox_xyxy": [
+              285,
+              50,
+              391,
+              154
+            ],
+            "detector_label": null
+          },
+          {
+            "label": "spoon",
+            "confidence": 0.5223,
+            "bbox_xyxy": [
+              5,
+              177,
+              218,
+              345
+            ],
+            "detector_label": null
+          },
+          {
+            "label": "soup can",
+            "confidence": 0.9586,
+            "bbox_xyxy": [
+              372,
+              326,
+              472,
+              422
+            ],
+            "detector_label": "soup can"
+          },
+          {
+            "label": "cracker box",
+            "confidence": 0.9588,
+            "bbox_xyxy": [
+              181,
+              371,
+              322,
+              480
+            ],
+            "detector_label": "soup can"
+          }
+        ]
+      }
+    },
+    {
+      "rgb": "1790672907604492800_13_rgb.png",
+      "depth": "1790672907604492800_13_depth.npy",
+      "depth_clusters": {
+        "count": 4,
+        "latency_ms": 243.4
+      },
+      "yolov8s_world_conf_0.25": {
+        "latency_ms": 11.7,
+        "count": 0,
+        "labels": [],
+        "detections": []
+      },
+      "yolov8s_world_conf_0.02": {
+        "latency_ms": 11.0,
+        "count": 0,
+        "labels": [],
+        "detections": []
+      },
+      "yolov8l_world_conf_0.25": {
+        "latency_ms": 15.2,
+        "count": 0,
+        "labels": [],
+        "detections": []
+      },
+      "yolov8l_world_conf_0.02": {
+        "latency_ms": 15.0,
+        "count": 0,
+        "labels": [],
+        "detections": []
+      },
+      "cluster_clip_yolo_l": {
+        "latency_ms": 434.6,
+        "count": 4,
+        "objects": [
+          {
+            "label": "spoon",
+            "confidence": 0.2915,
+            "bbox_xyxy": [
+              406,
+              0,
+              566,
+              118
+            ],
+            "detector_label": null
+          },
+          {
+            "label": "cube",
+            "confidence": 0.4714,
+            "bbox_xyxy": [
+              538,
+              0,
+              640,
+              144
+            ],
+            "detector_label": null
+          },
+          {
+            "label": "water bottle",
+            "confidence": 0.7358,
+            "bbox_xyxy": [
+              276,
+              212,
+              401,
+              432
+            ],
+            "detector_label": null
+          },
+          {
+            "label": "cracker box",
+            "confidence": 0.9516,
+            "bbox_xyxy": [
+              422,
+              361,
+              602,
+              480
+            ],
+            "detector_label": null
+          }
+        ]
+      }
+    },
+    {
+      "rgb": "1790672919993928700_15_rgb.png",
+      "depth": "1790672919993928700_15_depth.npy",
+      "depth_clusters": {
+        "count": 5,
+        "latency_ms": 217.6
+      },
+      "yolov8s_world_conf_0.25": {
+        "latency_ms": 11.7,
+        "count": 1,
+        "labels": [
+          "soup can"
+        ],
+        "detections": [
+          {
+            "label": "soup can",
+            "score": 0.4221,
+            "bbox_xyxy": [
+              409.4,
+              361.5,
+              455.9,
+              423.5
+            ]
+          }
+        ]
+      },
+      "yolov8s_world_conf_0.02": {
+        "latency_ms": 13.5,
+        "count": 2,
+        "labels": [
+          "soup can"
+        ],
+        "detections": [
+          {
+            "label": "soup can",
+            "score": 0.4221,
+            "bbox_xyxy": [
+              409.4,
+              361.5,
+              455.9,
+              423.5
+            ]
+          },
+          {
+            "label": "soup can",
+            "score": 0.0541,
+            "bbox_xyxy": [
+              181.8,
+              406.9,
+              287.8,
+              480.0
+            ]
+          }
+        ]
+      },
+      "yolov8l_world_conf_0.25": {
+        "latency_ms": 15.6,
+        "count": 1,
+        "labels": [
+          "soup can"
+        ],
+        "detections": [
+          {
+            "label": "soup can",
+            "score": 0.4299,
+            "bbox_xyxy": [
+              409.0,
+              360.9,
+              456.2,
+              422.5
+            ]
+          }
+        ]
+      },
+      "yolov8l_world_conf_0.02": {
+        "latency_ms": 18.5,
+        "count": 1,
+        "labels": [
+          "soup can"
+        ],
+        "detections": [
+          {
+            "label": "soup can",
+            "score": 0.4299,
+            "bbox_xyxy": [
+              409.0,
+              360.9,
+              456.2,
+              422.5
+            ]
+          }
+        ]
+      },
+      "cluster_clip_yolo_l": {
+        "latency_ms": 389.6,
+        "count": 5,
+        "objects": [
+          {
+            "label": "cube",
+            "confidence": 0.6352,
+            "bbox_xyxy": [
+              376,
+              0,
+              640,
+              291
+            ],
+            "detector_label": null
+          },
+          {
+            "label": "cube",
+            "confidence": 0.4124,
+            "bbox_xyxy": [
+              285,
+              50,
+              391,
+              154
+            ],
+            "detector_label": null
+          },
+          {
+            "label": "spoon",
+            "confidence": 0.449,
+            "bbox_xyxy": [
+              5,
+              177,
+              218,
+              345
+            ],
+            "detector_label": null
+          },
+          {
+            "label": "soup can",
+            "confidence": 0.9674,
+            "bbox_xyxy": [
+              372,
+              326,
+              472,
+              422
+            ],
+            "detector_label": "soup can"
+          },
+          {
+            "label": "cracker box",
+            "confidence": 0.9857,
+            "bbox_xyxy": [
+              181,
+              371,
+              322,
+              480
+            ],
+            "detector_label": null
+          }
+        ]
+      }
+    }
+  ],
+  "selection": {
+    "default_yolo_size": "s",
+    "rgb_reason": "Both sizes named the same expected objects. Warm latency differed by only a few milliseconds across runs, so the smaller YOLOv8s-World is the default.",
+    "small": {
+      "bus": true,
+      "person": true,
+      "bus_ms": 21.5,
+      "person_ms": 23.5
+    },
+    "large": {
+      "bus": true,
+      "person": true,
+      "bus_ms": 17.7,
+      "person_ms": 20.8
+    },
+    "rgbd_reason": "Depth clustering decides how many objects exist. CLIP names each cluster. YOLO-World is attached only when a box agrees with a cluster. MobileSAM, when it runs, returns masks without class names, so it cannot answer a closed question alone."
+  }
+}
