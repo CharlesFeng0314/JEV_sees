@@ -15,15 +15,6 @@ def robo_root() -> Path | None:
     return candidate if candidate.is_dir() else None
 
 
-def yolo_weight(size: str = "s") -> str:
-    root = robo_root()
-    if root is not None:
-        path = root / "models" / "benchmark" / f"yolov8{size}-worldv2.pt"
-        if path.is_file():
-            return str(path)
-    return f"yolov8{size}-worldv2.pt"
-
-
 def clip_weight() -> str:
     root = robo_root()
     if root is not None:

@@ -1,35 +1,41 @@
-"""Ask JEV what color the bus is.
-
-Prints the tracks first. The JEV call needs TYPESAFE_API_KEY; without it the
-script still prints what the camera path saw. The picture is the Ultralytics
-bus.jpg sample.
-"""
+"""Ask JEV what color the detected bus is."""
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-from jev_sees import Sees
+from jev_sees import Choice, Sees, TypeSafeClient
 
 IMAGE = Path(__file__).resolve().parents[1] / "assets" / "bus.jpg"
+QUESTION = "What color is the bus?"
 
 
 def main() -> int:
-    sees = Sees(vocabulary=["bus", "person", "car"])
-    tracks = sees.observe(IMAGE)
-    for item in tracks:
-        color = (item.get("attributes") or {}).get("color", "")
-        print(f"{item['object_id']} {item['label']} {item['bbox_xyxy']} {color}")
-    if not sees.api_key:
-        print("TYPESAFE_API_KEY is unset; skipped the JEV call")
-        return 0
-    result = sees.ask(
-        "What color is the bus?",
-        ["yellow", "red", "white", "blue", "black", "uncertain"],
-    )
-    print(result.choice, result.confidence)
-    print(result.probabilities)
+    sees = Sees()
+    sees.observe(IMAGE)
+
+    with TypeSafeClient() as client:
+        response = client.system_one(
+            state=sees.state(QUESTION),
+            questions={
+                "bus_color": Choice(
+                    instructions=QUESTION,
+                    criteria={
+                        "yellow": None,
+                        "red": None,
+                        "white": None,
+                        "blue": None,
+                        "black": None,
+                        "uncertain": None,
+                    },
+                )
+            },
+        )
+
+    answer = response.choices["bus_color"]
+    print(answer.choice, answer.confidence)
+    print(answer.probabilities)
     return 0
 
 

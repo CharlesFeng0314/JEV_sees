@@ -59,25 +59,44 @@ Anything that can be expressed as a closed judgment over the scene.
 ### Identify
 
 ```python
-result = sees(
-    "assets/bus.jpg",
-    "What color is the bus?",
-    ["yellow", "red", "white", "blue", "black", "uncertain"],
-)
+from jev_sees import Choice, Sees, TypeSafeClient
 
-print(result.choice)
+question = "What color is the bus?"
+sees = Sees()
+sees.observe("assets/bus.jpg")
+
+with TypeSafeClient() as client:
+    response = client.system_one(
+        state=sees.state(question),
+        questions={
+            "bus_color": Choice(
+                instructions=question,
+                criteria={"yellow": None, "red": None, "blue": None, "uncertain": None},
+            )
+        },
+    )
+
+print(response.choices["bus_color"].choice)
 # blue
 ```
+
+`JEV Sees` creates `state`. The official `typesafe-sdk` still owns the `Choice`, the `system_one` call, and the response.
 
 ### Estimate a probability
 
 ```python
-result = sees.ask(
-    "Is object_003 in immediate danger from a vehicle?",
-    "yes/no",
-)
+from jev_sees import Noul
 
-print(result.noul)
+question = "Is object_003 in immediate danger from a vehicle?"
+state = sees.state(question)
+
+with TypeSafeClient() as client:
+    response = client.system_one(
+        state=state,
+        questions={"in_danger": Noul(instructions=question)},
+    )
+
+print(response.nouls["in_danger"].noul)
 # probability of "yes"
 ```
 
@@ -85,23 +104,18 @@ print(result.noul)
 
 ```python
 questions = {
-    "object_001": {
-        "yes": "object_001 is in a car accident or a car is about to hit them",
-        "no": "object_001 is clear of every car",
-    },
-    "object_004": {
-        "yes": "object_004 is in a car accident or a car is about to hit them",
-        "no": "object_004 is clear of every car",
-    },
+    obj["object_id"]: Noul(
+        instructions=f"Is {obj['object_id']} in immediate danger from a car?"
+    )
+    for obj in tracks
+    if obj["label"] == "person"
 }
 
-result = sees.ask("Each question is one pedestrian.", questions)
-
-for object_id, answer in result.answers.items():
-    print(object_id, answer.noul)
+with TypeSafeClient() as client:
+    response = client.system_one(state=sees.state("Pedestrian risk"), questions=questions)
 ```
 
-One call can therefore return one structured answer per object instead of one free-form paragraph about the entire frame.
+Each pedestrian remains a named official `Noul` question, and its official answer is available from `response.nouls[object_id]`.
 
 ---
 
@@ -133,36 +147,33 @@ PowerShell:
 $env:TYPESAFE_API_KEY = "your-key"
 ```
 
-Or create a `.env` file in the directory you run from:
-
-```text
-TYPESAFE_API_KEY=your-key
-```
-
-You can also pass `Sees(api_key="...")` directly.
-
-> No key yet? `observe()` still works locally. The API key is only required when JEV is asked to make a judgment.
+Both the official `TypeSafeClient` and the high-level video entry point can read this key. `observe()` and `state()` themselves remain local.
 
 ### 3. Run the smallest example
 
 ```python
-from jev_sees import Sees
+from jev_sees import Choice, Sees, TypeSafeClient
 
+question = "What color is the bus?"
 sees = Sees()
-
-result = sees(
-    "assets/bus.jpg",
-    "What color is the bus?",
-    ["yellow", "red", "white", "blue", "black", "uncertain"],
-)
-
-print(result.choice, result.confidence)
+sees.observe("assets/bus.jpg")
+with TypeSafeClient() as client:
+    response = client.system_one(
+        state=sees.state(question),
+        questions={
+            "bus_color": Choice(
+                instructions=question,
+                criteria={"yellow": None, "red": None, "blue": None, "uncertain": None},
+            )
+        },
+    )
+print(response.choices["bus_color"].choice)
 ```
 
 Expected result on the included image:
 
 ```text
-blue 1.0
+blue
 ```
 
 Full example: [examples/bus_color.py](examples/bus_color.py)
@@ -209,42 +220,15 @@ These are implementation details, but they unlock the product behavior that matt
 
 ## Question types
 
-You write ordinary Python values; JEV Sees turns them into JEV question objects.
+`Choice`, `Noul`, `Score`, and `TypeSafeClient` are re-exported by `jev_sees` for a single import line. They are the official `typesafe-sdk` classes, so direct calls still use `client.system_one(...)` and official typed collections such as `response.choices`, `response.nouls`, and `response.scores`.
 
-| What you want | Python input | Result |
-| --- | --- | --- |
-| Pick one answer | `["red", "blue", "green"]` | choice + probabilities |
-| Pick one answer with descriptions | `{"safe": "...", "unsafe": "..."}` | choice + probabilities |
-| Yes / no probability | `"yes/no"` | probability of yes |
-| Yes / no with explicit criteria | `{"yes": "...", "no": "..."}` | probability of yes |
-| Score against a rubric | tuple or `{"rubric": [...]}` | structured score |
-| Ask several questions together | `{question_id: question_spec}` | one answer per key |
-
-For a single question, shortcuts such as `result.choice`, `result.confidence`, `result.probabilities`, and `result.noul` are available.
-
-For multiple questions, use `result.answers`.
+JEV Sees does not infer a question type from natural language and does not turn lists or dictionaries into JEV questions. Applications construct the official question objects themselves. For video, `questions=` may be a callable that receives the current tracked objects and returns a mapping of official questions.
 
 ---
 
-## Live video: one probability per person
+## Video: one risk per pedestrian
 
-[examples/traffic_relations.py](examples/traffic_relations.py) reads the included street clip, tracks road users, and periodically asks JEV about every visible pedestrian in one call.
-
-The loop is conceptually simple:
-
-```text
-video frame
-   ↓
-observe()
-   ↓
-person_1, person_2, car_1, ...
-   ↓
-one yes/no question per pedestrian
-   ↓
-one JEV call
-   ↓
-risk(person_1), risk(person_2), ...
-```
+[examples/traffic_relations.py](examples/traffic_relations.py) keeps sampling, tracking, rendering, and output formatting inside the SDK. Its small `questions()` function is application code: it creates official `Noul` objects for the current tracked objects. JEV Sees does not contain a traffic-specific plan or inspect the prompt to invent those questions.
 
 Run it with:
 
@@ -252,7 +236,7 @@ Run it with:
 python examples/traffic_relations.py
 ```
 
-Without an API key, the script still runs the local perception/tracking path and writes the GIF; it simply skips the JEV judgment.
+This example calls JEV and therefore requires `TYPESAFE_API_KEY`.
 
 Source video credits: [assets/CREDITS.md](assets/CREDITS.md)
 
@@ -260,23 +244,15 @@ Source video credits: [assets/CREDITS.md](assets/CREDITS.md)
 
 ## RGB-D: let depth decide what exists
 
-RGB-only mode starts from detector boxes.
+RGB-only mode starts from Florence-2 dense-region captions. Florence discovers boxes and generates their labels; callers do not pass an object vocabulary.
 
-RGB-D mode takes a different path: **depth clusters decide which physical objects exist**, then CLIP names the clusters and YOLO contributes additional semantic evidence.
+RGB-D mode takes a different path: **depth clusters decide which physical objects exist**, and overlapping Florence regions provide free-text names when available.
 
 That matters when a 2D detector misses something that is still physically present.
-
-In the included RGB-D sample, frame 13 has no YOLO detection at the configured threshold, while the RGB-D pipeline still returns four objects.
 
 | | | |
 | --- | --- | --- |
 | ![frame 6](assets/frame_06.png) | ![frame 13](assets/frame_13.png) | ![frame 15](assets/frame_15.png) |
-
-| Frame | Depth clusters | YOLOv8s @ 0.25 | RGB-D pipeline |
-| --- | ---: | --- | --- |
-| 6 | 5 | 1 soup can | 5 objects |
-| 13 | 4 | nothing | spoon, cube, water bottle, cracker box |
-| 15 | 5 | 1 soup can | 5 objects |
 
 With camera intrinsics, RGB-D observations can also include `position_m`, which lets the scene state carry metric 3D positions and object-to-object gaps.
 
@@ -284,18 +260,7 @@ With camera intrinsics, RGB-D observations can also include `position_m`, which 
 
 ## Performance
 
-Measured on an RTX 4070 Ti SUPER after one warmup. Raw record: [assets/pipeline_benchmark.json](assets/pipeline_benchmark.json).
-
-![Pipeline latency](assets/pipeline_latency.png)
-
-| Input | YOLOv8s boxes | YOLOv8s full pipeline | YOLOv8l boxes | YOLOv8l full pipeline |
-| --- | --- | --- | --- | --- |
-| bus.jpg | bus + 4 people, 19.5 ms | bus labeled blue, 92.4 ms | bus + 4 people, 18.8 ms | 98.7 ms |
-| zidane.jpg | 2 people, 20.8 ms | 102.9 ms | 2 people, 22.0 ms | 98.2 ms |
-
-YOLOv8s is the default because the larger YOLOv8l did not improve latency in this benchmark.
-
-The current RGB-D path is heavier: the included sample frames are roughly 379–408 ms end to end.
+The earlier YOLO benchmark does not describe the Florence-2 pipeline and has intentionally been removed from the current documentation. A new image and video benchmark is required before publishing latency claims for this backend.
 
 ---
 
@@ -303,18 +268,21 @@ The current RGB-D path is heavier: the included sample frames are roughly 379–
 
 Weights are intentionally not stored in this repository.
 
+Florence-2 is loaded from Hugging Face on first use. The default is `microsoft/Florence-2-base-ft`; choose another compatible checkpoint with:
+
+```python
+Sees(florence_model="microsoft/Florence-2-large-ft")
+```
+
 If `JEV_SEES_ROBO_ROOT` points to a directory containing:
 
 ```text
-models/benchmark/yolov8s-worldv2.pt
 weights/clip/ViT-B-32.pt
 ```
 
 JEV Sees uses those files.
 
-Otherwise Ultralytics and CLIP download their own weights on first use.
-
-You can also pass another detector with `yolo_model=...`.
+JEV Sees uses that local CLIP weight for color evidence. Otherwise CLIP downloads its weight on first use.
 
 ---
 
@@ -373,7 +341,7 @@ The long-term idea is straightforward: **see → judge → act.**
 
 JEV Sees is currently **v0.1.0** and intentionally experimental.
 
-The public surface is already small — `Sees()`, `observe()`, and `ask()` — but the perception stack, scene representation, examples, and evaluation are still evolving.
+The public surface stays small: `Sees(...)` is the high-level image/video product entry point, while `observe()` and `state()` expose the visual layer for direct official JEV calls. Official JEV classes are re-exported unchanged. The perception stack, scene representation, examples, and evaluation are still evolving.
 
 If you try it on another camera, another robot, a weird scene, or a use case the examples did not anticipate, open an issue or start a discussion. Those experiments are exactly what this repo is for.
 

@@ -17,9 +17,12 @@ dependencies = [
     "pillow",
     "scipy",
     "scikit-learn",
-    "ultralytics",
     "torch",
+    "transformers>=4.49,<5",
+    "timm",
+    "einops",
     "clip @ git+https://github.com/openai/CLIP.git",
+    "openpyxl",
 ]
 
 [project.optional-dependencies]

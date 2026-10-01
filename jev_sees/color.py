@@ -5,6 +5,9 @@ from __future__ import annotations
 import numpy as np
 
 
+COLOR_NAMES = ("red", "orange", "yellow", "green", "blue", "white", "black", "gray")
+
+
 def dominant_color(rgb: np.ndarray, mask: np.ndarray | None = None) -> str:
     pixels = rgb if mask is None else rgb[mask]
     if len(pixels) == 0:

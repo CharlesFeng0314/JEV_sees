@@ -1,49 +1,53 @@
-"""YOLO-style entry point: one object, then call it."""
+"""Public visual session and optional official JEV calls."""
 
 from __future__ import annotations
 
 import os
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 from .given_that import build_given_that
 from .io import load_depth, load_rgb
 from .memory import SceneMemory
-from .questions import compile_questions
+from .render import annotate, write_visual
+from .report import JudgmentLog, write_excel, write_json
 from .result import Result
+from .runtime import DEFAULT_FLORENCE_MODEL
 from .tracking import TrackBank
-from .vocabulary import COCO_CLASSES
+
+_VIDEO_SUFFIXES = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"}
 
 DEFAULT_MODEL = "jev-latest"
 DEFAULT_BASE_URL = "https://api.typesafe.ai"
 
+QuestionFactory = Callable[[list[dict[str, Any]]], Mapping[str, Any]]
+QuestionSource = Mapping[str, Any] | QuestionFactory
+
 
 class Sees:
-    """Watch a camera and ask JEV a closed question about what it sees.
-
-    ``typesafe-sdk`` stays inside this package. Pass an API key, or set
-    ``TYPESAFE_API_KEY``.
-    """
+    """Discover visible objects, track them, and build official JEV state."""
 
     def __init__(
         self,
         api_key: str | None = None,
         *,
-        vocabulary: list[str] | None = None,
         model: str = DEFAULT_MODEL,
         base_url: str = DEFAULT_BASE_URL,
-        yolo_model: str | None = None,
+        florence_model: str = DEFAULT_FLORENCE_MODEL,
         clip_model: str | None = None,
+        device: str | None = None,
+        perceptor: Any = None,
         client: Any = None,
     ):
         self.api_key = api_key or _api_key_from_env()
         self.model = model
         self.base_url = base_url
         self._client = client
-        self.vocabulary = list(vocabulary or COCO_CLASSES)
-        self._yolo_model = yolo_model
+        self._florence_model = florence_model
         self._clip_model = clip_model
-        self._runtime: Any = None
+        self._device = device
+        self._runtime: Any = perceptor
         self.memory = SceneMemory()
         self.tracks = TrackBank("image")
         self.modality = "rgb"
@@ -52,15 +56,52 @@ class Sees:
 
     def __call__(
         self,
-        image: object,
-        prompt: str,
-        questions: object,
+        source: object,
+        question: str,
+        questions: QuestionSource,
         depth: object | None = None,
         *,
         intrinsics: dict[str, float] | None = None,
+        save: str | Path | None = None,
+        json: str | Path | None = None,
+        excel: str | Path | None = None,
+        every: int | None = None,
+        start: int | None = None,
+        end: int | None = None,
     ) -> Result:
-        self.observe(image, depth, intrinsics=intrinsics)
-        return self.ask(prompt, questions)
+        """Observe an image/video and ask application-supplied JEV questions.
+
+        ``questions`` must already contain official JEV question objects, or be
+        a callable that creates them from the current tracks. Sees never infers
+        a question type or constructs Choice/Noul/Score objects.
+        """
+
+        self._begin_call()
+        if _is_video(source):
+            result = self._call_video(
+                Path(source),
+                question,
+                questions,
+                save=save,
+                every=every,
+                start=start,
+                end=end,
+            )
+        else:
+            result = self._call_image(
+                source,
+                question,
+                questions,
+                depth=depth,
+                intrinsics=intrinsics,
+                save=save,
+            )
+        print(result)
+        if json is not None:
+            write_json(json, result.question, result.rows, result.timeline)
+        if excel is not None:
+            write_excel(excel, result.rows, result.timeline)
+        return result
 
     def observe(
         self,
@@ -68,14 +109,9 @@ class Sees:
         depth: object | None = None,
         *,
         intrinsics: dict[str, float] | None = None,
-        vocabulary: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Detect this frame, keep object ids stable, and update scene memory."""
+        """Discover this frame, keep object ids stable, and update memory."""
 
-        if vocabulary is not None:
-            self.vocabulary = list(vocabulary)
-            if self._runtime is not None:
-                self._runtime.set_vocabulary(self.vocabulary)
         rgb = load_rgb(image)
         depth_map = load_depth(depth)
         mode = "camera" if depth_map is not None else "image"
@@ -99,29 +135,132 @@ class Sees:
         self.memory.observe(tracked)
         return tracked
 
-    def ask(self, prompt: str, questions: object) -> Result:
-        """Ask JEV about the memory accumulated so far."""
+    def ask(self, prompt: str, questions: Mapping[str, Any]) -> Result:
+        """Call JEV with official question objects supplied by the application."""
 
-        state = build_given_that(
+        official = _official_questions(questions)
+        state = self.state(prompt)
+        response = self._system_one(state, official)
+        return Result(response)
+
+    def state(self, prompt: str) -> dict[str, Any]:
+        """Return accumulated visual facts as official JEV ``state``."""
+
+        return build_given_that(
             prompt,
             self.memory,
             modality=self.modality,
             image_size=self.image_size,
         )
-        compiled = compile_questions(questions, prompt)
-        response = self._system_one(state, compiled)
-        return Result(response)
+
+    def _begin_call(self) -> None:
+        self.memory = SceneMemory()
+        self.tracks = TrackBank("image")
+        self.modality = "rgb"
+        self._modality_locked = False
+        self.image_size = None
+
+    def _call_image(
+        self,
+        source: object,
+        question: str,
+        questions: QuestionSource,
+        *,
+        depth: object | None,
+        intrinsics: dict[str, float] | None,
+        save: str | Path | None,
+    ) -> Result:
+        rgb = load_rgb(source)
+        tracks = self.observe(rgb, depth, intrinsics=intrinsics)
+        log = JudgmentLog()
+        log.see(tracks)
+        response = self._ask_if_ready(question, _questions_for(questions, tracks))
+        if response is not None:
+            log.add(None, tracks, response.answers)
+        if save is not None:
+            answers = {} if response is None else response.answers
+            framed = annotate(rgb, tracks, risks=_risks(answers), captions=_captions(answers))
+            write_visual([framed], save, fps=1)
+        return _result(question, log, response)
+
+    def _call_video(
+        self,
+        path: Path,
+        question: str,
+        questions: QuestionSource,
+        *,
+        save: str | Path | None,
+        every: int | None,
+        start: int | None,
+        end: int | None,
+    ) -> Result:
+        import cv2
+        import numpy as np
+
+        if start is not None and end is not None and start > end:
+            raise ValueError("start must be less than or equal to end")
+        if every is not None and every < 1:
+            raise ValueError("every must be at least 1")
+        capture = cv2.VideoCapture(str(path))
+        if not capture.isOpened():
+            raise FileNotFoundError(f"Could not open {path}")
+        fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0) or 12.0
+        stride = every if every is not None else max(1, int(round(fps / 2.0)))
+        origin = 0 if start is None else int(start)
+        if start is not None:
+            capture.set(cv2.CAP_PROP_POS_FRAMES, origin)
+        index = origin
+        log = JudgmentLog()
+        frames: list[Any] = []
+        last: Result | None = None
+        try:
+            while True:
+                ok, frame = capture.read()
+                if not ok:
+                    break
+                if end is not None and index > end:
+                    break
+                rgb = np.ascontiguousarray(frame[:, :, ::-1])
+                tracks = self.observe(rgb)
+                if (index - origin) % stride == 0:
+                    log.see(tracks)
+                    response = self._ask_if_ready(question, _questions_for(questions, tracks))
+                    if response is not None:
+                        last = response
+                        log.add(index, tracks, response.answers)
+                    if save is not None:
+                        answers = {} if response is None else response.answers
+                        frames.append(
+                            annotate(
+                                rgb,
+                                tracks,
+                                risks=_risks(answers),
+                                captions=_captions(answers),
+                            )
+                        )
+                index += 1
+        finally:
+            capture.release()
+        if save is not None:
+            if not frames:
+                raise ValueError(f"No sampled frame to write to {save}")
+            write_visual(frames, save, fps=max(0.1, fps / stride))
+        return _result(question, log, last)
+
+    def _ask_if_ready(self, question: str, questions: dict[str, Any]) -> Result | None:
+        if not questions:
+            return None
+        return self.ask(question, questions)
 
     def _vision(self) -> Any:
         if self._runtime is None:
             from .runtime import VisionRuntime
 
             self._runtime = VisionRuntime(
-                yolo_path=self._yolo_model,
+                florence_model=self._florence_model,
                 clip_path=self._clip_model,
-                vocabulary=self.vocabulary,
+                device=self._device,
             )
-        self._runtime.set_vocabulary(self.vocabulary)
         return self._runtime
 
     def _system_one(self, state: dict[str, Any], questions: dict[str, Any]) -> Any:
@@ -133,6 +272,53 @@ class Sees:
 
         with TypeSafeClient(api_key=self.api_key, model=self.model, base_url=self.base_url) as client:
             return client.system_one(state=state, questions=questions)
+
+
+def _questions_for(source: QuestionSource, tracks: list[dict[str, Any]]) -> dict[str, Any]:
+    questions = source(tracks) if callable(source) else source
+    return _official_questions(questions, allow_empty=True)
+
+
+def _official_questions(
+    questions: Mapping[str, Any],
+    *,
+    allow_empty: bool = False,
+) -> dict[str, Any]:
+    if not isinstance(questions, Mapping):
+        raise TypeError("questions must map names to official JEV question objects")
+    official = {str(key): value for key, value in questions.items()}
+    if not official and not allow_empty:
+        raise ValueError("questions must contain at least one official JEV question")
+    return official
+
+
+def _result(question: str, log: JudgmentLog, response: Result | None) -> Result:
+    raw = None if response is None else response.response
+    return Result(raw, rows=log.rows(), timeline=log.export_timeline(), question=question)
+
+
+def _is_video(source: object) -> bool:
+    if isinstance(source, (str, Path)):
+        return Path(source).suffix.lower() in _VIDEO_SUFFIXES
+    return False
+
+
+def _risks(answers: dict[str, Any]) -> dict[str, float]:
+    risks = {}
+    for key, answer in answers.items():
+        value = getattr(answer, "noul", None)
+        if value is not None:
+            risks[str(key)] = float(value)
+    return risks
+
+
+def _captions(answers: dict[str, Any]) -> dict[str, str]:
+    captions = {}
+    for key, answer in answers.items():
+        choice = getattr(answer, "choice", None)
+        if choice is not None:
+            captions[str(key)] = str(choice)
+    return captions
 
 
 def _api_key_from_env() -> str:

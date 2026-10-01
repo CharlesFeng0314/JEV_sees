@@ -1,29 +1,65 @@
-"""Thin view over the official JEV response."""
+"""Thin view over the official JEV response, plus the table for one call."""
 
 from __future__ import annotations
 
 from typing import Any
 
+from .report import format_table
+
 
 class Result:
-    """Official ``SystemOneResponse`` plus shortcuts for a single question."""
+    """Official ``SystemOneResponse`` plus the rows of one image or video call."""
 
-    def __init__(self, response: Any):
+    def __init__(
+        self,
+        response: Any = None,
+        *,
+        rows: list[dict[str, Any]] | None = None,
+        timeline: list[dict[str, Any]] | None = None,
+        question: str = "",
+    ):
         self.response = response
+        self.rows = list(rows or [])
+        self.timeline = list(timeline or [])
+        self.question = question
+
+    def __str__(self) -> str:
+        if self.rows or self.question or self.timeline:
+            return format_table(self.rows)
+        if self.response is None:
+            return ""
+        choice = getattr(self._only(), "choice", None)
+        if choice is not None:
+            confidence = getattr(self._only(), "confidence", None)
+            if confidence is None:
+                return str(choice)
+            return f"{choice} {float(confidence):.2f}"
+        noul = getattr(self._only(), "noul", None)
+        if noul is None:
+            return ""
+        return f"{float(noul):.2f}"
 
     @property
     def answers(self) -> dict[str, Any]:
+        if self.response is None:
+            return {}
         return self.response.answers
 
     @property
     def model(self) -> str:
+        if self.response is None:
+            return ""
         return self.response.model
 
     @property
     def usage(self) -> Any:
+        if self.response is None:
+            return None
         return getattr(self.response, "usage", None)
 
     def model_dump(self) -> dict[str, Any]:
+        if self.response is None:
+            return {"question": self.question, "rows": self.rows, "timeline": self.timeline}
         return self.response.model_dump()
 
     @property
