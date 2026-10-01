@@ -39,9 +39,11 @@ def public_object(item: dict[str, Any]) -> dict[str, Any]:
             continue
         value = item[key]
         if key == "attributes" and isinstance(value, dict):
-            color = value.get("color")
-            if color:
-                summary["attributes"] = {"color": color}
+            color_evidence = value.get("color_evidence")
+            if isinstance(color_evidence, dict):
+                summary["attributes"] = {
+                    "color_evidence": _public_value(color_evidence),
+                }
             continue
         if key == "confidence" and isinstance(value, (int, float)):
             summary[key] = round(float(value), 4)
@@ -55,6 +57,18 @@ def public_object(item: dict[str, Any]) -> dict[str, Any]:
         if isinstance(value, (str, int, float, bool)):
             summary[key] = value
     return summary
+
+
+def _public_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _public_value(item) for key, item in value.items() if item is not None}
+    if isinstance(value, (list, tuple)):
+        return [_public_value(item) for item in value]
+    if isinstance(value, float):
+        return round(value, 4)
+    if isinstance(value, (str, int, bool)) or value is None:
+        return value
+    return str(value)
 
 
 def _centroid(item: dict[str, Any]) -> tuple[float, float] | None:
@@ -191,7 +205,7 @@ def build_given_that(
     width = image_size[0] if image_size else None
     height = image_size[1] if image_size else None
     state = {
-        "schema_version": 1,
+        "schema_version": 2,
         "user_goal": prompt,
         "camera": {"modality": modality, "image_width": width, "image_height": height},
         "current_scene": {"visible_objects": visible},

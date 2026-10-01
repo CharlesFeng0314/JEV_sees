@@ -199,8 +199,12 @@ label
 confidence
 bbox_xyxy
 centroid_uv
-attributes.color
+attributes.color_evidence.cv
+attributes.color_evidence.clip
+attributes.color_evidence.caption
 ```
+
+Color is evidence, not an SDK verdict. The CV branch preserves pixel measurements, CLIP preserves its complete color probability distribution, and Florence's original region caption remains alongside both. JEV can therefore judge agreement or disagreement instead of receiving one preselected color string.
 
 Across video frames, JEV Sees keeps object IDs stable when possible and maintains scene memory. That lets visual questions stay attached to the same object over time instead of treating every frame as a completely new world.
 

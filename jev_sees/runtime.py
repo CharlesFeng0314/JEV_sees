@@ -127,16 +127,32 @@ class VisionRuntime:
         return [{names[index]: float(score) for index, score in enumerate(row)} for row in rows]
 
     def color_names(self, crops: list[Image.Image]) -> list[str]:
+        """Return only the leading name for compatibility with custom runtimes."""
+
+        return [str(item["label"]) for item in self.color_evidence(crops)]
+
+    def color_evidence(self, crops: list[Image.Image]) -> list[dict[str, Any]]:
+        """Return CLIP's full color distribution for every crop."""
+
         if not crops:
             return []
         prompts = [f"a photo of a {color} object" for color in COLOR_NAMES]
         rows = self.classify_crops(crops, prompts)
-        names = []
+        evidence = []
         for row in rows:
-            best = max(row, key=row.get)
-            color = best.removeprefix("a photo of a ").removesuffix(" object")
-            names.append(color if color in COLOR_NAMES else "unknown")
-        return names
+            probabilities = {
+                prompt.removeprefix("a photo of a ").removesuffix(" object"): float(score)
+                for prompt, score in row.items()
+            }
+            best = max(probabilities, key=probabilities.get)
+            evidence.append(
+                {
+                    "label": best if best in COLOR_NAMES else "unknown",
+                    "confidence": float(probabilities[best]),
+                    "probabilities": probabilities,
+                }
+            )
+        return evidence
 
     def _encode_labels(self, labels: list[str]) -> Any:
         import clip
