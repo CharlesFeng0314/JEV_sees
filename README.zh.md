@@ -201,8 +201,12 @@ label
 confidence
 bbox_xyxy
 centroid_uv
-attributes.color
+attributes.color_evidence.cv
+attributes.color_evidence.clip
+attributes.color_evidence.caption
 ```
+
+颜色在 state 中是证据，不是 SDK 提前拍板的答案。CV 分支保留像素测量，CLIP 保留完整颜色概率分布，Florence 的原始 region caption 也会一同保留。JEV 可以据此判断三路结果是否一致，而不是只收到一个预选颜色字符串。
 
 连续处理视频帧时，JEV Sees 会尽量维持稳定的 object ID，并维护 scene memory。这样同一个视觉问题就可以持续跟着“同一个对象”走，而不是每一帧都重新认识整个世界。
 

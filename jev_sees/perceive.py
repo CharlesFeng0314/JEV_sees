@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from .color import dominant_color
+from .color import cv_color_evidence
 from .geometry import cluster_depth, default_intrinsics, depth_to_meters, mask_facts
 from .runtime import VisionRuntime
 from .tracking import box_iou
@@ -16,21 +16,26 @@ from .tracking import box_iou
 def perceive_rgb(runtime: VisionRuntime, rgb: np.ndarray) -> list[dict[str, Any]]:
     detections = runtime.detect(rgb)
     crops = [_crop(rgb, item["bbox_xyxy"]) for item in detections]
-    colors = runtime.color_names(crops) if crops else []
+    clip_evidence = _clip_color_evidence(runtime, crops)
     observations = []
-    for detection, color in zip(detections, colors, strict=True):
+    for detection, clip_color in zip(detections, clip_evidence, strict=True):
         x1, y1, x2, y2 = [int(round(value)) for value in detection["bbox_xyxy"]]
-        heuristic = dominant_color(rgb[max(0, y1) : max(0, y2), max(0, x1) : max(0, x2)])
-        # CLIP names a blue bus green on the official crop. A chromatic body color wins.
-        named = heuristic if heuristic not in {"unknown", "gray"} else color
+        description = detection.get("description") or detection["label"]
+        cv_color = cv_color_evidence(rgb[max(0, y1) : max(0, y2), max(0, x1) : max(0, x2)])
         observation = {
-                "label": detection["label"],
-                "bbox_xyxy": [x1, y1, x2, y2],
-                "centroid_uv": [round((x1 + x2) / 2.0, 2), round((y1 + y2) / 2.0, 2)],
-                "attributes": {"color": named, "dominant_color": heuristic, "clip_color": color},
-                "description": detection.get("description") or detection["label"],
-                "source": "rgb_florence_dense_region_clip",
-            }
+            "label": detection["label"],
+            "bbox_xyxy": [x1, y1, x2, y2],
+            "centroid_uv": [round((x1 + x2) / 2.0, 2), round((y1 + y2) / 2.0, 2)],
+            "attributes": {
+                "color_evidence": {
+                    "cv": cv_color,
+                    "clip": clip_color,
+                    "caption": {"text": description},
+                }
+            },
+            "description": description,
+            "source": "rgb_florence_dense_region_clip",
+        }
         if detection.get("score") is not None:
             observation["confidence"] = float(detection["score"])
         observations.append(observation)
@@ -64,28 +69,47 @@ def perceive_rgbd(
         crops.append(_masked_crop(rgb, mask, facts["bbox_xyxy"]))
     detections = runtime.detect(rgb)
     _attach_detector(prepared, detections)
-    colors = runtime.color_names(crops) if crops else []
+    clip_evidence = _clip_color_evidence(runtime, crops)
     observations = []
-    for (mask, facts), color in zip(prepared, colors, strict=True):
+    for (mask, facts), clip_color in zip(prepared, clip_evidence, strict=True):
         label = str(facts.get("detector_label") or "unlabeled object")
+        description = str(facts.get("detector_description") or label)
         edge = _touches_edge(facts["bbox_xyxy"], width, height)
         observation = {
-                "label": label,
-                "bbox_xyxy": facts["bbox_xyxy"],
-                "centroid_uv": facts["centroid_uv"],
-                "position_m": facts["position_m"],
-                "attributes": {"color": color},
-                "description": facts.get("detector_description") or label,
-                "partial_view": edge,
-                "detector_label": facts.get("detector_label"),
-                "detector_match": facts.get("detector_match"),
-                "source": "rgbd_cluster_florence",
-                "mask_area_px": facts["area_px"],
-            }
+            "label": label,
+            "bbox_xyxy": facts["bbox_xyxy"],
+            "centroid_uv": facts["centroid_uv"],
+            "position_m": facts["position_m"],
+            "attributes": {
+                "color_evidence": {
+                    "cv": cv_color_evidence(rgb, mask),
+                    "clip": clip_color,
+                    "caption": {"text": description},
+                }
+            },
+            "description": description,
+            "partial_view": edge,
+            "detector_label": facts.get("detector_label"),
+            "detector_match": facts.get("detector_match"),
+            "source": "rgbd_cluster_florence",
+            "mask_area_px": facts["area_px"],
+        }
         if facts.get("detector_match") is not None:
             observation["confidence"] = float(facts["detector_match"])
         observations.append(observation)
     return observations
+
+
+def _clip_color_evidence(runtime: VisionRuntime, crops: list[Image.Image]) -> list[dict[str, Any]]:
+    if not crops:
+        return []
+    method = getattr(runtime, "color_evidence", None)
+    if callable(method):
+        return list(method(crops))
+    return [
+        {"label": name, "confidence": None, "probabilities": {}}
+        for name in runtime.color_names(crops)
+    ]
 
 
 def _attach_detector(prepared: list[tuple[np.ndarray, dict[str, Any]]], detections: list[dict[str, Any]]) -> None:

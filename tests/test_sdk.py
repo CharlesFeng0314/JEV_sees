@@ -6,18 +6,49 @@ import json
 import unittest
 
 import numpy as np
+from PIL import Image
 from typesafe_sdk import Choice, Noul
 
+from jev_sees.color import cv_color_evidence
 from jev_sees.given_that import build_given_that
 from jev_sees.memory import SceneMemory
 from jev_sees.report import JudgmentLog, write_excel, write_json
 from jev_sees.result import Result
-from jev_sees.runtime import DENSE_REGION_CAPTION, _dense_regions
+from jev_sees.runtime import DENSE_REGION_CAPTION, VisionRuntime, _dense_regions
 from jev_sees.session import Sees
 from jev_sees.tracking import TrackBank, box_gap, box_iou
 
 
 class PerceptionTests(unittest.TestCase):
+    def test_cv_color_evidence_keeps_measurements(self) -> None:
+        blue = np.zeros((4, 5, 3), dtype=np.uint8)
+        blue[:, :, 2] = 255
+
+        evidence = cv_color_evidence(blue)
+
+        self.assertEqual(evidence["label"], "blue")
+        self.assertEqual(evidence["median_rgb"], [0, 0, 255])
+        self.assertEqual(evidence["pixel_count"], 20)
+        self.assertEqual(evidence["chromatic_fraction"], 1.0)
+
+    def test_clip_color_evidence_keeps_the_distribution(self) -> None:
+        runtime = VisionRuntime()
+
+        def classify(crops, labels):
+            return [
+                {
+                    label: 0.72 if "blue" in label else 0.28 if "green" in label else 0.0
+                    for label in labels
+                }
+            ]
+
+        runtime.classify_crops = classify
+        evidence = runtime.color_evidence([Image.fromarray(np.zeros((2, 2, 3), dtype=np.uint8))])
+
+        self.assertEqual(evidence[0]["label"], "blue")
+        self.assertEqual(evidence[0]["confidence"], 0.72)
+        self.assertEqual(evidence[0]["probabilities"]["green"], 0.28)
+
     def test_florence_dense_regions_need_no_object_vocabulary(self) -> None:
         parsed = {
             DENSE_REGION_CAPTION: {
@@ -62,6 +93,9 @@ class PerceptionTests(unittest.TestCase):
 
         self.assertEqual(tracks[0]["label"], "a city bus")
         self.assertEqual(tracks[0]["object_id"], "object_001")
+        evidence = tracks[0]["attributes"]["color_evidence"]
+        self.assertEqual(set(evidence), {"cv", "clip", "caption"})
+        self.assertEqual(evidence["caption"]["text"], "a blue city bus")
 
 
 class TrackingTests(unittest.TestCase):
@@ -128,7 +162,21 @@ class GivenThatTests(unittest.TestCase):
                     "confidence": 0.91,
                     "bbox_xyxy": [10, 20, 100, 80],
                     "centroid_uv": [55, 50],
-                    "attributes": {"color": "yellow"},
+                    "attributes": {
+                        "color_evidence": {
+                            "cv": {
+                                "label": "yellow",
+                                "median_rgb": [220, 190, 30],
+                                "chromatic_fraction": 0.8,
+                            },
+                            "clip": {
+                                "label": "yellow",
+                                "confidence": 0.75,
+                                "probabilities": {"yellow": 0.75, "orange": 0.25},
+                            },
+                            "caption": {"text": "a yellow bus"},
+                        }
+                    },
                     "semantic_scores": {"bus": 0.9, "car": 0.1},
                     "description": "yellow bus",
                 },
@@ -150,6 +198,13 @@ class GivenThatTests(unittest.TestCase):
         self.assertNotIn("pose_history", payload)
         visible = state["current_scene"]["visible_objects"]
         self.assertEqual(visible[0]["bbox_xyxy"], [10, 20, 100, 80])
+        self.assertEqual(state["schema_version"], 2)
+        color = visible[0]["attributes"]["color_evidence"]
+        self.assertEqual(set(color), {"cv", "clip", "caption"})
+        self.assertEqual(color["cv"]["median_rgb"], [220, 190, 30])
+        self.assertEqual(color["clip"]["probabilities"]["yellow"], 0.75)
+        self.assertEqual(color["caption"]["text"], "a yellow bus")
+        self.assertNotIn("color", visible[0]["attributes"])
         self.assertTrue(state["relations"])
         self.assertIn("prompt_budget", state)
         self.assertEqual(state["prompt_budget"]["hard_limit_tokens"], 31000)
