@@ -12,11 +12,9 @@ from .geometry import cluster_depth, default_intrinsics, depth_to_meters, mask_f
 from .runtime import VisionRuntime
 from .tracking import box_iou
 
-YOLO_WEIGHT = 2.0
 
-
-def perceive_rgb(runtime: VisionRuntime, rgb: np.ndarray, *, confidence: float = 0.25) -> list[dict[str, Any]]:
-    detections = runtime.detect(rgb, confidence=confidence)
+def perceive_rgb(runtime: VisionRuntime, rgb: np.ndarray) -> list[dict[str, Any]]:
+    detections = runtime.detect(rgb)
     crops = [_crop(rgb, item["bbox_xyxy"]) for item in detections]
     colors = runtime.color_names(crops) if crops else []
     observations = []
@@ -25,17 +23,17 @@ def perceive_rgb(runtime: VisionRuntime, rgb: np.ndarray, *, confidence: float =
         heuristic = dominant_color(rgb[max(0, y1) : max(0, y2), max(0, x1) : max(0, x2)])
         # CLIP names a blue bus green on the official crop. A chromatic body color wins.
         named = heuristic if heuristic not in {"unknown", "gray"} else color
-        observations.append(
-            {
+        observation = {
                 "label": detection["label"],
-                "confidence": detection["score"],
                 "bbox_xyxy": [x1, y1, x2, y2],
                 "centroid_uv": [round((x1 + x2) / 2.0, 2), round((y1 + y2) / 2.0, 2)],
                 "attributes": {"color": named, "dominant_color": heuristic, "clip_color": color},
-                "description": f"{named} {detection['label']}",
-                "source": "rgb_yolo_world_clip",
+                "description": detection.get("description") or detection["label"],
+                "source": "rgb_florence_dense_region_clip",
             }
-        )
+        if detection.get("score") is not None:
+            observation["confidence"] = float(detection["score"])
+        observations.append(observation)
     return observations
 
 
@@ -47,9 +45,8 @@ def perceive_rgbd(
     *,
     near_m: float = 0.15,
     far_m: float = 2.0,
-    yolo_confidence: float = 0.02,
 ) -> list[dict[str, Any]]:
-    """Depth clusters decide which objects exist. CLIP names them. YOLO is evidence."""
+    """Depth clusters decide which objects exist; Florence names matched regions."""
 
     height, width = rgb.shape[:2]
     calibration = intrinsics or default_intrinsics(width, height)
@@ -65,45 +62,29 @@ def perceive_rgbd(
             continue
         prepared.append((mask, facts))
         crops.append(_masked_crop(rgb, mask, facts["bbox_xyxy"]))
-    class_scores = runtime.classify_crops(crops) if crops else []
-    detections = runtime.detect(rgb, confidence=yolo_confidence)
+    detections = runtime.detect(rgb)
     _attach_detector(prepared, detections)
     colors = runtime.color_names(crops) if crops else []
     observations = []
-    for (mask, facts), scores, color in zip(prepared, class_scores, colors, strict=True):
-        if not scores:
-            continue
-        label = max(scores, key=scores.get)
-        total = sum(scores.values()) or 1.0
-        normalized = {name: value / total for name, value in scores.items()}
-        detector_label = facts.get("detector_label")
-        if detector_label in normalized:
-            boost = np.zeros(len(normalized), dtype=np.float64)
-            names = list(normalized)
-            boost[names.index(detector_label)] = YOLO_WEIGHT * float(facts.get("detector_score") or 0.0)
-            base = np.asarray([normalized[name] for name in names], dtype=np.float64)
-            fused = base + boost
-            fused = fused / max(float(fused.sum()), 1e-9)
-            label = names[int(np.argmax(fused))]
-            normalized = {name: float(fused[index]) for index, name in enumerate(names)}
+    for (mask, facts), color in zip(prepared, colors, strict=True):
+        label = str(facts.get("detector_label") or "unlabeled object")
         edge = _touches_edge(facts["bbox_xyxy"], width, height)
-        observations.append(
-            {
+        observation = {
                 "label": label,
-                "confidence": float(normalized[label]),
-                "semantic_scores": normalized,
                 "bbox_xyxy": facts["bbox_xyxy"],
                 "centroid_uv": facts["centroid_uv"],
                 "position_m": facts["position_m"],
                 "attributes": {"color": color},
-                "description": f"{color} {label}",
+                "description": facts.get("detector_description") or label,
                 "partial_view": edge,
                 "detector_label": facts.get("detector_label"),
-                "detector_score": facts.get("detector_score"),
-                "source": "rgbd_cluster_clip_yolo",
+                "detector_match": facts.get("detector_match"),
+                "source": "rgbd_cluster_florence",
                 "mask_area_px": facts["area_px"],
             }
-        )
+        if facts.get("detector_match") is not None:
+            observation["confidence"] = float(facts["detector_match"])
+        observations.append(observation)
     return observations
 
 
@@ -127,7 +108,8 @@ def _attach_detector(prepared: list[tuple[np.ndarray, dict[str, Any]]], detectio
         if scores[row, col] < 0.20:
             continue
         prepared[row][1]["detector_label"] = detections[col]["label"]
-        prepared[row][1]["detector_score"] = float(detections[col]["score"] * scores[row, col])
+        prepared[row][1]["detector_description"] = detections[col].get("description")
+        prepared[row][1]["detector_match"] = float(scores[row, col])
 
 
 def _crop(rgb: np.ndarray, bbox: list[float]) -> Image.Image:

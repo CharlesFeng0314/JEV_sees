@@ -1,10 +1,8 @@
-"""Give JEV a camera.
+"""Give JEV vision while keeping the official JEV SDK objects intact."""
 
-The public surface is this package. Official JEV question types are built
-internally from ordinary Python values.
-"""
+from typesafe_sdk import Choice, Noul, Score, TypeSafeClient, TypeSafeError
 
 from .session import Sees
 
-__all__ = ["Sees"]
+__all__ = ["Choice", "Noul", "Score", "Sees", "TypeSafeClient", "TypeSafeError"]
 __version__ = "0.1.0"
