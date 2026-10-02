@@ -1,10 +1,4 @@
-"""Ask JEV how likely a car accident is for each pedestrian in a street clip.
-
-The application supplies the official per-object JEV questions. Sampling,
-tracking, rendering, and output files stay inside JEV Sees.
-The clip is an excerpt of the Intel IoT sample ``person-bicycle-car-detection``
-(CC BY 4.0). The call needs TYPESAFE_API_KEY; a JEV failure is raised.
-"""
+"""Print each sampled frame's live car-accident probability per pedestrian."""
 
 from __future__ import annotations
 
@@ -15,16 +9,23 @@ from jev_sees import Noul, Sees
 
 ROOT = Path(__file__).resolve().parents[1]
 VIDEO = ROOT / "assets" / "traffic.mp4"
-GIF = ROOT / "assets" / "demo.gif"
 # The objects share the frame from just after 42s through about 50s.
 WINDOW = (504, 600)
-QUESTION = "视频中这个对象是正在或即将发生 car accident 的行人吗？"
+QUESTION = "当前采样帧中每个行人正在发生 car accident 的实时概率"
+
+
+def is_person(obj: dict) -> bool:
+    text = f"{obj.get('label', '')} {obj.get('description', '')}".lower()
+    return any(word in text for word in ("person", "pedestrian", "man", "woman", "boy", "girl"))
 
 
 def questions(objects: list[dict]) -> dict[str, Noul]:
     return {
-        obj["object_id"]: Noul(instructions=f"{obj['object_id']}：{QUESTION}")
+        obj["object_id"]: Noul(
+            instructions=f"当前帧中，{obj['object_id']} 正在发生 car accident 吗？"
+        )
         for obj in objects
+        if is_person(obj)
     }
 
 
@@ -34,7 +35,6 @@ def main() -> int:
         VIDEO,
         QUESTION,
         questions,
-        save=GIF,
         start=start,
         end=end,
     )

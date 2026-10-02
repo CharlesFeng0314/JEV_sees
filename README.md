@@ -206,7 +206,7 @@ attributes.color_evidence.caption
 
 Color is evidence, not an SDK verdict. The CV branch preserves pixel measurements, CLIP preserves its complete color probability distribution, and Florence's original region caption remains alongside both. JEV can therefore judge agreement or disagreement instead of receiving one preselected color string.
 
-Across video frames, JEV Sees keeps object IDs stable when possible and maintains scene memory. That lets visual questions stay attached to the same object over time instead of treating every frame as a completely new world.
+Across video frames, JEV Sees keeps object IDs stable when possible and maintains scene memory. Samples reuse the existing `pose_history` and add `frame_index` plus media time. The two most recent time-aware poses of each visible object enter the JEV state, so JEV can reason from box movement and the actual interval. Visual questions stay attached to the same object over time instead of treating every frame as a completely new world.
 
 The scene can also carry useful spatial context such as:
 
@@ -230,9 +230,11 @@ JEV Sees does not infer a question type from natural language and does not turn 
 
 ---
 
-## Video: one risk per pedestrian
+## Video: one live probability per pedestrian per sampled frame
 
-[examples/traffic_relations.py](examples/traffic_relations.py) keeps sampling, tracking, rendering, and output formatting inside the SDK. Its small `questions()` function is application code: it creates official `Noul` objects for the current tracked objects. JEV Sees does not contain a traffic-specific plan or inspect the prompt to invent those questions.
+[examples/traffic_relations.py](examples/traffic_relations.py) is intentionally a minimal terminal example. Its small `questions()` function is application code: it selects current pedestrians and creates an official `Noul` for each object ID. JEV Sees does not contain a traffic-specific plan or inspect the prompt to invent questions or options.
+
+Video results are frame-primary in `result.frames`: every evaluated sample contains its `frame_index`, `video_time_s`, and the probability for every selected object in that frame. `result.rows` remains a per-object peak summary for compatibility. When `save=` is used, video output includes labeled bounding boxes and a right-side live panel whose object rows stay pinned after first detection.
 
 Run it with:
 

@@ -29,15 +29,20 @@ _OBJECT_KEYS = (
     "currently_visible",
     "stale",
     "pose_observation_count",
+    "recent_poses",
 )
 
 
-def public_object(item: dict[str, Any]) -> dict[str, Any]:
+def public_object(item: dict[str, Any], *, include_recent_poses: bool = True) -> dict[str, Any]:
     summary = {}
     for key in _OBJECT_KEYS:
         if key not in item or item[key] is None:
             continue
         value = item[key]
+        if key == "recent_poses":
+            if include_recent_poses and isinstance(value, list):
+                summary[key] = _public_value(value)
+            continue
         if key == "attributes" and isinstance(value, dict):
             color_evidence = value.get("color_evidence")
             if isinstance(color_evidence, dict):
@@ -168,29 +173,66 @@ def fit_prompt_budget(state: dict[str, Any]) -> dict[str, Any]:
     """
 
     bounded = deepcopy(state)
+    bounded["prompt_budget"] = {
+        "hard_limit_tokens": MAX_JEV_INPUT_TOKENS,
+        "target_char_budget": TARGET_PROMPT_CHARS,
+        "serialized_chars": 0,
+        "conservative_token_estimate": 0,
+    }
     known = list((bounded.get("scene_memory") or {}).get("known_objects") or [])
     visible = list((bounded.get("current_scene") or {}).get("visible_objects") or [])
     pairs = list(bounded.get("relations") or [])
-    while _serialized_chars(bounded) > TARGET_PROMPT_CHARS and len(pairs) > 0:
+    while _over_budget(bounded) and pairs:
         pairs.pop()
         bounded["relations"] = pairs
-    while _serialized_chars(bounded) > TARGET_PROMPT_CHARS and len(known) > MIN_OBJECTS:
+    for item in visible:
+        poses = item.get("recent_poses")
+        if isinstance(poses, list) and len(poses) > 2:
+            item["recent_poses"] = poses[-2:]
+    while _over_budget(bounded) and len(known) > MIN_OBJECTS:
         dropped = known.pop()
         bounded["scene_memory"]["known_objects"] = known
         visible = [item for item in visible if item.get("object_id") != dropped.get("object_id")]
         bounded["current_scene"]["visible_objects"] = visible
-    if _serialized_chars(bounded) > TARGET_PROMPT_CHARS:
+    if _over_budget(bounded):
         for collection in (known, visible):
             for item in collection:
                 item.pop("description", None)
-    chars = _serialized_chars(bounded)
-    bounded["prompt_budget"] = {
-        "hard_limit_tokens": MAX_JEV_INPUT_TOKENS,
-        "target_char_budget": TARGET_PROMPT_CHARS,
-        "serialized_chars": chars,
-        "conservative_token_estimate": chars,
-    }
+    if _over_budget(bounded):
+        for item in reversed(visible):
+            item.pop("recent_poses", None)
+            if not _over_budget(bounded):
+                break
+    if _over_budget(bounded):
+        for collection in (known, visible):
+            for item in reversed(collection):
+                item.pop("attributes", None)
+                if not _over_budget(bounded):
+                    break
+            if not _over_budget(bounded):
+                break
+    while _over_budget(bounded) and len(known) > 1:
+        dropped = known.pop()
+        bounded["scene_memory"]["known_objects"] = known
+        visible = [item for item in visible if item.get("object_id") != dropped.get("object_id")]
+        bounded["current_scene"]["visible_objects"] = visible
+    if _over_budget(bounded):
+        raise ValueError("The essential JEV state exceeds the 24,000-character prompt budget")
+    _finalize_prompt_budget(bounded)
     return bounded
+
+
+def _over_budget(state: dict[str, Any]) -> bool:
+    # Leave room for the final numeric values written into prompt_budget.
+    return _serialized_chars(state) > TARGET_PROMPT_CHARS - 64
+
+
+def _finalize_prompt_budget(state: dict[str, Any]) -> None:
+    budget = state["prompt_budget"]
+    for _ in range(4):
+        chars = _serialized_chars(state)
+        budget["serialized_chars"] = chars
+        budget["conservative_token_estimate"] = chars
 
 
 def build_given_that(
@@ -200,8 +242,13 @@ def build_given_that(
     modality: str,
     image_size: tuple[int, int] | None,
 ) -> dict[str, Any]:
-    remembered = [public_object(item) for item in memory.prompt_objects()][:MAX_OBJECTS]
-    visible = [item for item in remembered if item.get("currently_visible")][:MAX_OBJECTS]
+    prompt_objects = memory.prompt_objects()[:MAX_OBJECTS]
+    remembered = [public_object(item, include_recent_poses=False) for item in prompt_objects]
+    visible = [
+        public_object(item, include_recent_poses=True)
+        for item in prompt_objects
+        if item.get("currently_visible")
+    ][:MAX_OBJECTS]
     width = image_size[0] if image_size else None
     height = image_size[1] if image_size else None
     state = {

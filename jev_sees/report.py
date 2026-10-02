@@ -6,7 +6,17 @@ import json
 from pathlib import Path
 from typing import Any
 
-_PRINT_ORDER = ("object_id", "label", "risk", "choice", "confidence", "peak_frame")
+_PRINT_ORDER = (
+    "frame_index",
+    "video_time_s",
+    "object_id",
+    "label",
+    "probability",
+    "risk",
+    "choice",
+    "confidence",
+    "peak_frame",
+)
 _HIDDEN = {"bbox_xyxy", "_score"}
 
 
@@ -16,6 +26,7 @@ class JudgmentLog:
     def __init__(self) -> None:
         self.peaks: dict[str, dict[str, Any]] = {}
         self.timeline: list[dict[str, Any]] = []
+        self.frames: list[dict[str, Any]] = []
         self.scene: list[dict[str, Any]] = []
         self.seen: dict[str, dict[str, Any]] = {}
         self.had_questions = False
@@ -31,10 +42,21 @@ class JudgmentLog:
                 "bbox_xyxy": _bbox(item),
             }
 
-    def add(self, frame: int | None, tracks: list[dict[str, Any]], answers: dict[str, Any]) -> None:
+    def add(
+        self,
+        frame: int | None,
+        tracks: list[dict[str, Any]],
+        answers: dict[str, Any],
+        *,
+        video_time_s: float | None = None,
+    ) -> None:
+        by_id = {str(item.get("object_id")): item for item in tracks if item.get("object_id")}
+        if frame is not None:
+            self.frames.append(
+                _frame_sample(frame, video_time_s, by_id, answers)
+            )
         if not answers:
             return
-        by_id = {str(item.get("object_id")): item for item in tracks if item.get("object_id")}
         for key, answer in answers.items():
             track = by_id.get(str(key))
             risk = _number(answer, "noul")
@@ -53,6 +75,9 @@ class JudgmentLog:
         if self.timeline:
             return list(self.timeline)
         return list(self.scene)
+
+    def export_frames(self) -> list[dict[str, Any]]:
+        return list(self.frames)
 
     def rows(self) -> list[dict[str, Any]]:
         if self.peaks:
@@ -144,20 +169,41 @@ def format_table(rows: list[dict[str, Any]]) -> str:
     return "\n".join([head, *body])
 
 
-def write_json(path: str | Path, question: str, rows: list[dict[str, Any]], timeline: list[dict[str, Any]]) -> None:
+def write_json(
+    path: str | Path,
+    question: str,
+    rows: list[dict[str, Any]],
+    timeline: list[dict[str, Any]],
+    frames: list[dict[str, Any]] | None = None,
+) -> None:
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"question": question, "rows": rows, "timeline": timeline}
+    payload = {
+        "question": question,
+        "frames": list(frames or []),
+        "summary": rows,
+        "rows": rows,
+        "timeline": timeline,
+    }
     destination.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def write_excel(path: str | Path, rows: list[dict[str, Any]], timeline: list[dict[str, Any]]) -> None:
+def write_excel(
+    path: str | Path,
+    rows: list[dict[str, Any]],
+    timeline: list[dict[str, Any]],
+    frames: list[dict[str, Any]] | None = None,
+) -> None:
     from openpyxl import Workbook
 
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     book = Workbook()
-    _fill_sheet(book.active, "Summary", rows)
+    if frames:
+        _fill_sheet(book.active, "Frames", frame_rows(frames))
+        _fill_sheet(book.create_sheet("Summary"), "Summary", rows)
+    else:
+        _fill_sheet(book.active, "Summary", rows)
     _fill_sheet(book.create_sheet("Timeline"), "Timeline", timeline)
     book.save(destination)
 
@@ -216,6 +262,51 @@ def _number(answer: Any, name: str) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+def frame_rows(frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for frame in frames:
+        base = {
+            "frame_index": frame.get("frame_index"),
+            "video_time_s": frame.get("video_time_s"),
+        }
+        objects = frame.get("objects") or []
+        if not objects:
+            rows.append(base)
+            continue
+        for item in objects:
+            rows.append({**base, **item})
+    return rows
+
+
+def _frame_sample(
+    frame: int,
+    video_time_s: float | None,
+    tracks: dict[str, dict[str, Any]],
+    answers: dict[str, Any],
+) -> dict[str, Any]:
+    sample: dict[str, Any] = {"frame_index": int(frame), "objects": []}
+    if video_time_s is not None:
+        sample["video_time_s"] = round(float(video_time_s), 4)
+    for key, answer in answers.items():
+        object_id = str(key)
+        track = tracks.get(object_id)
+        item: dict[str, Any] = {"object_id": object_id}
+        if track is not None:
+            item["label"] = track.get("label")
+            item["bbox_xyxy"] = _bbox(track)
+        risk = _number(answer, "noul")
+        choice = getattr(answer, "choice", None)
+        confidence = _number(answer, "confidence")
+        if risk is not None:
+            item["probability"] = risk
+        if choice is not None:
+            item["choice"] = str(choice)
+        if confidence is not None:
+            item["confidence"] = confidence
+        sample["objects"].append(item)
+    return sample
 
 
 def _cell(value: Any) -> str:
