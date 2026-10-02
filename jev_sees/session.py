@@ -10,7 +10,7 @@ from typing import Any
 from .given_that import build_given_that
 from .io import load_depth, load_rgb
 from .memory import SceneMemory
-from .render import annotate, write_visual
+from .render import DashboardRenderer, annotate, write_visual
 from .report import JudgmentLog, write_excel, write_json
 from .result import Result
 from .runtime import DEFAULT_FLORENCE_MODEL
@@ -53,6 +53,8 @@ class Sees:
         self.modality = "rgb"
         self._modality_locked = False
         self.image_size: tuple[int, int] | None = None
+        self.last_prompt_chars = 0
+        self.max_prompt_chars = 0
 
     def __call__(
         self,
@@ -98,9 +100,9 @@ class Sees:
             )
         print(result)
         if json is not None:
-            write_json(json, result.question, result.rows, result.timeline)
+            write_json(json, result.question, result.rows, result.timeline, result.frames)
         if excel is not None:
-            write_excel(excel, result.rows, result.timeline)
+            write_excel(excel, result.rows, result.timeline, result.frames)
         return result
 
     def observe(
@@ -109,6 +111,8 @@ class Sees:
         depth: object | None = None,
         *,
         intrinsics: dict[str, float] | None = None,
+        frame_index: int | None = None,
+        video_time_s: float | None = None,
     ) -> list[dict[str, Any]]:
         """Discover this frame, keep object ids stable, and update memory."""
 
@@ -132,7 +136,7 @@ class Sees:
 
             observations = perceive_rgb(runtime, rgb)
         tracked = self.tracks.update(observations)
-        self.memory.observe(tracked)
+        self.memory.observe(tracked, frame_index=frame_index, video_time_s=video_time_s)
         return tracked
 
     def ask(self, prompt: str, questions: Mapping[str, Any]) -> Result:
@@ -140,6 +144,8 @@ class Sees:
 
         official = _official_questions(questions)
         state = self.state(prompt)
+        self.last_prompt_chars = int(state["prompt_budget"]["serialized_chars"])
+        self.max_prompt_chars = max(self.max_prompt_chars, self.last_prompt_chars)
         response = self._system_one(state, official)
         return Result(response)
 
@@ -159,6 +165,8 @@ class Sees:
         self.modality = "rgb"
         self._modality_locked = False
         self.image_size = None
+        self.last_prompt_chars = 0
+        self.max_prompt_chars = 0
 
     def _call_image(
         self,
@@ -179,7 +187,15 @@ class Sees:
             log.add(None, tracks, response.answers)
         if save is not None:
             answers = {} if response is None else response.answers
-            framed = annotate(rgb, tracks, risks=_risks(answers), captions=_captions(answers))
+            dashboard = DashboardRenderer(panel_title="JEV OUTPUT // STRUCTURED ANSWER")
+            framed = dashboard.render(
+                rgb,
+                tracks,
+                answers,
+                frame_index=0,
+                video_time_s=0.0,
+                state_chars=self.last_prompt_chars or None,
+            )
             write_visual([framed], save, fps=1)
         return _result(question, log, response)
 
@@ -212,6 +228,7 @@ class Sees:
         index = origin
         log = JudgmentLog()
         frames: list[Any] = []
+        dashboard = DashboardRenderer() if save is not None else None
         last: Result | None = None
         try:
             while True:
@@ -220,22 +237,34 @@ class Sees:
                     break
                 if end is not None and index > end:
                     break
-                rgb = np.ascontiguousarray(frame[:, :, ::-1])
-                tracks = self.observe(rgb)
                 if (index - origin) % stride == 0:
+                    rgb = np.ascontiguousarray(frame[:, :, ::-1])
+                    video_time_s = index / fps
+                    tracks = self.observe(
+                        rgb,
+                        frame_index=index,
+                        video_time_s=video_time_s,
+                    )
                     log.see(tracks)
-                    response = self._ask_if_ready(question, _questions_for(questions, tracks))
+                    current_questions = _questions_for(questions, tracks)
+                    self.last_prompt_chars = 0
+                    response = self._ask_if_ready(question, current_questions)
                     if response is not None:
                         last = response
-                        log.add(index, tracks, response.answers)
+                        answers = response.answers
+                    else:
+                        answers = {}
+                    log.add(index, tracks, answers, video_time_s=video_time_s)
                     if save is not None:
-                        answers = {} if response is None else response.answers
+                        assert dashboard is not None
                         frames.append(
-                            annotate(
+                            dashboard.render(
                                 rgb,
                                 tracks,
-                                risks=_risks(answers),
-                                captions=_captions(answers),
+                                answers,
+                                frame_index=index,
+                                video_time_s=video_time_s,
+                                state_chars=self.last_prompt_chars or None,
                             )
                         )
                 index += 1
@@ -294,7 +323,13 @@ def _official_questions(
 
 def _result(question: str, log: JudgmentLog, response: Result | None) -> Result:
     raw = None if response is None else response.response
-    return Result(raw, rows=log.rows(), timeline=log.export_timeline(), question=question)
+    return Result(
+        raw,
+        rows=log.rows(),
+        timeline=log.export_timeline(),
+        frames=log.export_frames(),
+        question=question,
+    )
 
 
 def _is_video(source: object) -> bool:

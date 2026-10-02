@@ -15,6 +15,7 @@ from scipy.optimize import linear_sum_assignment
 CACHE_MATCH_RADIUS_M = 0.12
 MAX_TRACK_MATCH_RADIUS_M = 0.20
 MIN_IOU = 0.30
+MIN_IMAGE_MATCH_PX = 36.0
 
 
 def box_iou(left: list[float], right: list[float]) -> float:
@@ -105,7 +106,10 @@ class TrackBank:
             right = previous.get("bbox_xyxy")
             if not left or not right:
                 return 1e6
-            return 1.0 - box_iou(left, right)
+            overlap_cost = 1.0 - box_iou(left, right)
+            motion_cost = _centroid_distance(left, right) / max(_box_span(left), _box_span(right), 1.0)
+            label_bonus = 0.12 if _same_label(current, previous) else 0.0
+            return min(overlap_cost, motion_cost) - label_bonus
         current_position = _position(current)
         previous_position = _position(previous)
         if current_position is None or previous_position is None:
@@ -114,5 +118,45 @@ class TrackBank:
 
     def _accept(self, cost: float, current: dict[str, Any], previous: dict[str, Any]) -> bool:
         if self.mode == "image":
-            return (1.0 - cost) >= MIN_IOU
+            left = current.get("bbox_xyxy")
+            right = previous.get("bbox_xyxy")
+            if not left or not right:
+                return False
+            if not _same_label(current, previous):
+                return False
+            if box_iou(left, right) >= MIN_IOU:
+                return True
+            radius = max(MIN_IMAGE_MATCH_PX, 1.1 * max(_box_span(left), _box_span(right)))
+            return _centroid_distance(left, right) <= radius
         return cost <= _track_match_radius(current, previous)
+
+
+def _box_span(box: list[float]) -> float:
+    return max(abs(float(box[2]) - float(box[0])), abs(float(box[3]) - float(box[1])))
+
+
+def _centroid_distance(left: list[float], right: list[float]) -> float:
+    left_center = ((float(left[0]) + float(left[2])) / 2, (float(left[1]) + float(left[3])) / 2)
+    right_center = ((float(right[0]) + float(right[2])) / 2, (float(right[1]) + float(right[3])) / 2)
+    return math.dist(left_center, right_center)
+
+
+def _same_label(current: dict[str, Any], previous: dict[str, Any]) -> bool:
+    left = " ".join(str(current.get("label") or "").lower().split())
+    right = " ".join(str(previous.get("label") or "").lower().split())
+    if not left or not right:
+        return True
+    if left == right or left in right or right in left:
+        return True
+    return _label_family(left) is not None and _label_family(left) == _label_family(right)
+
+
+def _label_family(label: str) -> str | None:
+    words = set(label.replace("-", " ").split())
+    if words & {"person", "pedestrian", "man", "woman", "boy", "girl"}:
+        return "person"
+    if words & {"car", "vehicle", "bus", "truck", "van"}:
+        return "vehicle"
+    if words & {"bicycle", "bike", "cycle"}:
+        return "bicycle"
+    return None

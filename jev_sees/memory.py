@@ -18,7 +18,14 @@ class SceneMemory:
         self.revision = 0
         self.known_objects: dict[str, dict[str, Any]] = {}
 
-    def observe(self, observations: list[dict[str, Any]], captured_at: str | None = None) -> None:
+    def observe(
+        self,
+        observations: list[dict[str, Any]],
+        captured_at: str | None = None,
+        *,
+        frame_index: int | None = None,
+        video_time_s: float | None = None,
+    ) -> None:
         now = captured_at or utc_now()
         self.revision += 1
         visible: set[str] = set()
@@ -38,7 +45,12 @@ class SceneMemory:
                 "position_m": item.get("position_m"),
             }
             history = list(previous.get("pose_history", []))
-            history.append({"captured_at": now, "pose": pose, "confidence": item.get("confidence")})
+            sample = {"captured_at": now, "pose": pose, "confidence": item.get("confidence")}
+            if frame_index is not None:
+                sample["frame_index"] = int(frame_index)
+            if video_time_s is not None:
+                sample["video_time_s"] = float(video_time_s)
+            history.append(sample)
             history = history[-20:]
             confidence = item.get("confidence")
             record = {
@@ -70,22 +82,24 @@ class SceneMemory:
         objects = []
         for record in self.known_objects.values():
             pose = record.get("latest_pose") or {}
-            objects.append(
-                {
-                    "object_id": record["object_id"],
-                    "label": record["label"],
-                    "description": record.get("description"),
-                    "attributes": record.get("attributes") or {},
-                    "confidence": record.get("latest_confidence"),
-                    "bbox_xyxy": pose.get("bbox_xyxy"),
-                    "centroid_uv": pose.get("centroid_uv"),
-                    "position_m": pose.get("position_m"),
-                    "observation_count": record["observation_count"],
-                    "currently_visible": record["currently_visible"],
-                    "stale": record["stale"],
-                    "pose_observation_count": len(record.get("pose_history") or []),
-                }
-            )
+            item = {
+                "object_id": record["object_id"],
+                "label": record["label"],
+                "description": record.get("description"),
+                "attributes": record.get("attributes") or {},
+                "confidence": record.get("latest_confidence"),
+                "bbox_xyxy": pose.get("bbox_xyxy"),
+                "centroid_uv": pose.get("centroid_uv"),
+                "position_m": pose.get("position_m"),
+                "observation_count": record["observation_count"],
+                "currently_visible": record["currently_visible"],
+                "stale": record["stale"],
+                "pose_observation_count": len(record.get("pose_history") or []),
+            }
+            recent_poses = _recent_video_poses(record.get("pose_history") or [])
+            if recent_poses:
+                item["recent_poses"] = recent_poses
+            objects.append(item)
         objects.sort(
             key=lambda item: (
                 not bool(item.get("currently_visible")),
@@ -94,3 +108,26 @@ class SceneMemory:
             )
         )
         return objects
+
+
+def _recent_video_poses(history: list[dict[str, Any]], limit: int = 2) -> list[dict[str, Any]]:
+    """Project existing pose history into a small, video-time-aware prompt view."""
+
+    recent = []
+    for sample in history[-limit:]:
+        if sample.get("video_time_s") is None:
+            continue
+        pose = sample.get("pose") or {}
+        item: dict[str, Any] = {
+            "video_time_s": round(float(sample["video_time_s"]), 4),
+        }
+        if sample.get("frame_index") is not None:
+            item["frame_index"] = int(sample["frame_index"])
+        for key in ("bbox_xyxy", "centroid_uv", "position_m"):
+            value = pose.get(key)
+            if isinstance(value, (list, tuple)):
+                item[key] = [round(float(part), 4) for part in value]
+        if sample.get("confidence") is not None:
+            item["confidence"] = round(float(sample["confidence"]), 4)
+        recent.append(item)
+    return recent

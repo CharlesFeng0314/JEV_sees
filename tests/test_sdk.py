@@ -12,6 +12,7 @@ from typesafe_sdk import Choice, Noul
 from jev_sees.color import cv_color_evidence
 from jev_sees.given_that import build_given_that
 from jev_sees.memory import SceneMemory
+from jev_sees.render import DashboardRenderer
 from jev_sees.report import JudgmentLog, write_excel, write_json
 from jev_sees.result import Result
 from jev_sees.runtime import DENSE_REGION_CAPTION, VisionRuntime, _dense_regions
@@ -115,6 +116,18 @@ class TrackingTests(unittest.TestCase):
         second = bank.update([{"label": "car", "bbox_xyxy": [400, 400, 500, 500]}])
         self.assertNotEqual(first[0]["object_id"], second[0]["object_id"])
 
+    def test_nearby_non_overlapping_box_keeps_id(self) -> None:
+        bank = TrackBank("image")
+        first = bank.update([{"label": "person", "bbox_xyxy": [10, 10, 40, 90]}])
+        second = bank.update([{"label": "person", "bbox_xyxy": [42, 10, 72, 90]}])
+        self.assertEqual(first[0]["object_id"], second[0]["object_id"])
+
+    def test_nearby_different_label_does_not_keep_id_without_overlap(self) -> None:
+        bank = TrackBank("image")
+        first = bank.update([{"label": "person", "bbox_xyxy": [10, 10, 40, 90]}])
+        second = bank.update([{"label": "car", "bbox_xyxy": [42, 10, 72, 90]}])
+        self.assertNotEqual(first[0]["object_id"], second[0]["object_id"])
+
     def test_camera_position_keeps_id(self) -> None:
         bank = TrackBank("camera")
         first = bank.update(
@@ -149,6 +162,27 @@ class MemoryTests(unittest.TestCase):
         self.assertFalse(record["currently_visible"])
         self.assertTrue(record["stale"])
         self.assertLessEqual(len(record["pose_history"]), 20)
+
+    def test_video_time_reuses_pose_history(self) -> None:
+        memory = SceneMemory()
+        for frame in (10, 12, 14):
+            memory.observe(
+                [
+                    {
+                        "object_id": "object_001",
+                        "label": "person",
+                        "bbox_xyxy": [frame, 1, frame + 4, 9],
+                        "centroid_uv": [frame + 2, 5],
+                    }
+                ],
+                frame_index=frame,
+                video_time_s=frame / 4,
+            )
+        record = memory.known_objects["object_001"]
+        self.assertEqual(len(record["pose_history"]), 3)
+        projected = memory.prompt_objects()[0]["recent_poses"]
+        self.assertEqual([item["frame_index"] for item in projected], [12, 14])
+        self.assertEqual(projected[-1]["video_time_s"], 3.5)
 
 
 class GivenThatTests(unittest.TestCase):
@@ -209,6 +243,31 @@ class GivenThatTests(unittest.TestCase):
         self.assertIn("prompt_budget", state)
         self.assertEqual(state["prompt_budget"]["hard_limit_tokens"], 31000)
         self.assertLessEqual(state["prompt_budget"]["serialized_chars"], 24000)
+        self.assertEqual(
+            state["prompt_budget"]["serialized_chars"],
+            len(json.dumps(state, ensure_ascii=False, separators=(",", ":"), default=str)),
+        )
+
+    def test_current_scene_exposes_recent_video_poses_only(self) -> None:
+        memory = SceneMemory()
+        for frame in (2, 4):
+            memory.observe(
+                [
+                    {
+                        "object_id": "object_001",
+                        "label": "person",
+                        "bbox_xyxy": [frame, 0, frame + 3, 8],
+                        "centroid_uv": [frame + 1.5, 4],
+                    }
+                ],
+                frame_index=frame,
+                video_time_s=frame / 2,
+            )
+        state = build_given_that("current risk", memory, modality="rgb", image_size=(20, 20))
+        visible = state["current_scene"]["visible_objects"][0]
+        known = state["scene_memory"]["known_objects"][0]
+        self.assertEqual([item["frame_index"] for item in visible["recent_poses"]], [2, 4])
+        self.assertNotIn("recent_poses", known)
 
     def test_budget_drops_low_priority_objects(self) -> None:
         memory = SceneMemory()
@@ -324,6 +383,21 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(row["peak_frame"], 16)
         self.assertEqual([item["frame"] for item in log.export_timeline()], [10, 16])
 
+    def test_video_result_is_grouped_by_frame(self) -> None:
+        log = JudgmentLog()
+        person = {"object_id": "object_001", "label": "person", "bbox_xyxy": [1, 2, 3, 4]}
+
+        class Answer:
+            noul = 0.65
+            choice = None
+            confidence = None
+
+        log.add(12, [person], {"object_001": Answer()}, video_time_s=3.0)
+        frame = log.export_frames()[0]
+        self.assertEqual(frame["frame_index"], 12)
+        self.assertEqual(frame["video_time_s"], 3.0)
+        self.assertEqual(frame["objects"][0]["probability"], 0.65)
+
     def test_json_and_excel(self) -> None:
         import tempfile
         from pathlib import Path
@@ -334,15 +408,60 @@ class ReportTests(unittest.TestCase):
         timeline = [{"frame": 16, "object_id": "object_001", "risk": 0.8, "bbox_xyxy": [1, 2, 3, 4]}]
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            write_json(root / "risk.json", "每个行人", rows, timeline)
-            write_excel(root / "risk.xlsx", rows, timeline)
+            frames = [
+                {
+                    "frame_index": 16,
+                    "video_time_s": 4.0,
+                    "objects": [
+                        {
+                            "object_id": "object_001",
+                            "label": "person",
+                            "probability": 0.8,
+                            "bbox_xyxy": [1, 2, 3, 4],
+                        }
+                    ],
+                }
+            ]
+            write_json(root / "risk.json", "每个行人", rows, timeline, frames)
+            write_excel(root / "risk.xlsx", rows, timeline, frames)
             payload = json.loads((root / "risk.json").read_text(encoding="utf-8"))
+            self.assertEqual(payload["frames"][0]["frame_index"], 16)
             self.assertEqual(payload["rows"][0]["risk"], 0.8)
             self.assertEqual(payload["timeline"][0]["bbox_xyxy"], [1, 2, 3, 4])
             book = load_workbook(root / "risk.xlsx")
-            self.assertEqual(book.sheetnames, ["Summary", "Timeline"])
-            self.assertEqual(book["Summary"]["A2"].value, "object_001")
+            self.assertEqual(book.sheetnames, ["Frames", "Summary", "Timeline"])
+            self.assertEqual(book["Frames"]["A2"].value, 16)
             self.assertEqual(book["Timeline"]["A1"].value, "frame")
+
+
+class RenderTests(unittest.TestCase):
+    def test_dashboard_keeps_answer_rows_after_object_disappears(self) -> None:
+        renderer = DashboardRenderer()
+
+        class Answer:
+            noul = 0.72
+            confidence = None
+
+        frame = np.zeros((80, 120, 3), dtype=np.uint8)
+        tracks = [{"object_id": "object_001", "label": "person", "bbox_xyxy": [5, 5, 30, 70]}]
+        first = renderer.render(
+            frame,
+            tracks,
+            {"object_001": Answer()},
+            frame_index=1,
+            video_time_s=0.1,
+            state_chars=1200,
+        )
+        second = renderer.render(
+            frame,
+            [],
+            {},
+            frame_index=2,
+            video_time_s=0.2,
+        )
+        self.assertEqual(first.shape, second.shape)
+        self.assertIn("object_001", renderer.entries)
+        self.assertFalse(renderer.entries["object_001"]["visible"])
 
 
 class CallTests(unittest.TestCase):
@@ -424,7 +543,7 @@ class CallTests(unittest.TestCase):
             writer.release()
             sees = Sees(client=client)
 
-            def observe(image, depth=None, *, intrinsics=None):
+            def observe(image, depth=None, *, intrinsics=None, **kwargs):
                 return [
                     {"object_id": "object_001", "label": "person", "bbox_xyxy": [0, 0, 4, 8]},
                     {"object_id": "object_002", "label": "car", "bbox_xyxy": [5, 5, 12, 12]},
@@ -452,6 +571,8 @@ class CallTests(unittest.TestCase):
             self.assertEqual(result.rows[0]["object_id"], "object_001")
             self.assertEqual(result.rows[0]["risk"], 0.8)
             self.assertEqual(result.rows[0]["peak_frame"], 1)
+            self.assertEqual([frame["frame_index"] for frame in result.frames], [0, 1])
+            self.assertEqual(result.frames[1]["objects"][0]["probability"], 0.8)
             self.assertTrue((root / "risk.json").is_file())
             self.assertTrue((root / "risk.xlsx").is_file())
             self.assertTrue((root / "boxed.gif").is_file())

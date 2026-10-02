@@ -5,37 +5,36 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from jev_sees import Choice, Sees, TypeSafeClient
+from jev_sees import Choice, Sees
 
 IMAGE = Path(__file__).resolve().parents[1] / "assets" / "bus.jpg"
 QUESTION = "What color is the bus?"
 
 
-def main() -> int:
-    sees = Sees()
-    sees.observe(IMAGE)
-
-    with TypeSafeClient() as client:
-        response = client.system_one(
-            state=sees.state(QUESTION),
-            questions={
-                "bus_color": Choice(
-                    instructions=QUESTION,
-                    criteria={
-                        "yellow": None,
-                        "red": None,
-                        "white": None,
-                        "blue": None,
-                        "black": None,
-                        "uncertain": None,
-                    },
-                )
+def questions(objects: list[dict]) -> dict[str, Choice]:
+    buses = [item for item in objects if "bus" in str(item.get("label", "")).lower()]
+    return {
+        item["object_id"]: Choice(
+            instructions=f"What color is {item['object_id']}, the detected bus?",
+            criteria={
+                "yellow": None,
+                "red": None,
+                "white": None,
+                "blue": None,
+                "black": None,
+                "uncertain": None,
             },
         )
+        for item in buses
+    }
 
-    answer = response.choices["bus_color"]
-    print(answer.choice, answer.confidence)
-    print(answer.probabilities)
+
+def main() -> int:
+    Sees()(
+        IMAGE,
+        QUESTION,
+        questions,
+    )
     return 0
 
 

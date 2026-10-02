@@ -208,7 +208,7 @@ attributes.color_evidence.caption
 
 颜色在 state 中是证据，不是 SDK 提前拍板的答案。CV 分支保留像素测量，CLIP 保留完整颜色概率分布，Florence 的原始 region caption 也会一同保留。JEV 可以据此判断三路结果是否一致，而不是只收到一个预选颜色字符串。
 
-连续处理视频帧时，JEV Sees 会尽量维持稳定的 object ID，并维护 scene memory。这样同一个视觉问题就可以持续跟着“同一个对象”走，而不是每一帧都重新认识整个世界。
+连续处理视频帧时，JEV Sees 会尽量维持稳定的 object ID，并维护 scene memory。采样记录沿用现有的 `pose_history`，并附带 `frame_index` 和视频时间；当前可见对象最近两次带时间的 pose 会进入 JEV state，因此 JEV 可以直接根据框的位置变化和真实帧间隔判断运动。同一个视觉问题可以持续跟着“同一个对象”走，而不是每一帧都重新认识整个世界。
 
 场景里还可以继续带上：
 
@@ -232,9 +232,11 @@ JEV Sees 不会根据自然语言猜问题类型，也不会把 list 或 dict �
 
 ---
 
-## 视频：每个行人一个风险
+## 视频：每个采样帧、每个行人一个实时概率
 
-[examples/traffic_relations.py](examples/traffic_relations.py) 仍把抽帧、跟踪、绘制和输出格式放在 SDK 内部。示例里很短的 `questions()` 属于应用代码：它为当前 tracked objects 构造官方 `Noul`。JEV Sees 内部没有 traffic plan，也不会分析 prompt 后擅自生成问题。
+[examples/traffic_relations.py](examples/traffic_relations.py) 保持为只向终端输出的最小示例。示例里很短的 `questions()` 属于应用代码：它筛选当前行人，并为每个 object ID 构造官方 `Noul`。JEV Sees 内部没有 traffic plan，也不会分析 prompt 后擅自生成问题或选项。
+
+视频结果以 `result.frames` 为主：每个被实际判断的采样帧带有 `frame_index`、`video_time_s`，以及该帧所有被选对象的概率。`result.rows` 仍保留每个对象的峰值摘要，方便兼容已有代码。使用 `save=` 时，视频会绘制带标签的 bbox 和固定对象行的右侧实时统计面板。
 
 运行：
 
