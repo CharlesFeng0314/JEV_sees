@@ -4,7 +4,7 @@
 
 ### We gave JEV vision.
 
-Give JEV a question together with an image or video. JEV Sees lets it look at the scene and return a structured answer your program can use: a choice, a probability, or a score.
+**JEV is fast, structured, and built to make decisions.**
 
 [JEV](https://typesafe.ai/blog/introducing-system-one-models-and-jev) is the first **System One Model** from [TypeSafe AI](https://typesafe.ai/), built for fast, structured decisions inside software. JEV Sees is an independent open-source project built on JEV and `typesafe-sdk`; it is not an official TypeSafe AI vision product.
 
