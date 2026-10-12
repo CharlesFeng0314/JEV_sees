@@ -119,7 +119,7 @@ python examples/traffic_relations.py
 
 ```text
 frame_index  video_time_s  object_id   label   scope_probability  probability
-504          42.00         object_001  person  0.89               0.05
+504          42.00         object_001  person  0.88               0.04
 510          42.50         object_001  person  0.92               0.04
 ```
 
