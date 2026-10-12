@@ -2,91 +2,31 @@
 
 # JEV Sees
 
-### Let JEV understand images and video—and turn visual judgments into program-ready output.
+### We gave JEV vision.
 
-Give it an image, a video, or an RGB-D camera. JEV Sees discovers objects, keeps track of the same object over time, builds scene memory, and lets JEV answer your questions with a choice, probability, or score.
+Give JEV a question together with an image or video. JEV Sees lets it look at the scene and return a structured answer your program can use: a choice, a probability, or a score.
 
-[JEV](https://typesafe.ai/blog/introducing-system-one-models-and-jev) is the first **System One Model** released by [TypeSafe AI](https://typesafe.ai/), built for fast, structured decisions inside software. JEV, the System One API, and `typesafe-sdk` are all provided by TypeSafe AI. **JEV Sees is my independent open-source project built on those capabilities; it is not an official TypeSafe AI vision product.**
+[JEV](https://typesafe.ai/blog/introducing-system-one-models-and-jev) is the first **System One Model** from [TypeSafe AI](https://typesafe.ai/), built for fast, structured decisions inside software. JEV Sees is an independent open-source project built on JEV and `typesafe-sdk`; it is not an official TypeSafe AI vision product.
 
-JEV Sees grew out of my other project, [JEV Control Your Roboarm](https://github.com/CharlesFeng0314/JEV_control_your_roboarm). I first used visual context there to let JEV control a robot arm. I then pulled that vision layer out of one robot-specific workflow and turned it into a reusable product for images, video, monitoring, and robotics.
+JEV Sees works with images, video, and RGB-D cameras. It finds the objects in view, keeps their IDs consistent across video frames, and asks JEV your question about each relevant object.
 
-Vision runs locally: raw pixels become scene state with labeled boxes, stable object IDs, position history, and spatial relations before JEV makes a judgment. You define the questions and options; JEV Sees makes each visual decision object-aware, stateful, repeatable, and ready to use in code.
-
-**One frame. Many objects. One JEV call.**
-
-![JEV Sees traffic demo](assets/demo.gif)
-
-> In the demo above, every visible pedestrian gets an accident-risk probability from the same JEV call.
-
-- One entry point for images, video, and RGB-D
-- A label, bounding box, and stable cross-frame object ID for every tracked object
-- Many selected objects combined into one JEV call per sampled frame
-- Results ready for the terminal, JSON, Excel, or a live visual dashboard
-
----
-
-## From one image to a visual decision loop
-
-JEV Sees attaches a question to a specific object and carries that question with the object's ID across frames. Every sampled moment produces an explicit choice, probability, or score that an application can display, record, threshold, or use to trigger the next action.
-
-Ask continuously:
-
-- What is each pedestrian's probability of currently being in a car accident?
-- Which object should the robot pay attention to?
-- Has the target changed state?
-- Which visible item best matches the condition?
-- Can every selected object in this frame be judged at once?
-
-The same flow works on one image or continuously in video, monitoring, automated testing, and robotics. You control the questions and options; JEV Sees handles object tracking, scene context, batched calls, and result organization.
-
----
-
-## Run the demos
-
-The repository includes one bus image and one traffic video. The examples stay intentionally small: they call the real JEV API and print structured results in the terminal. Together they show a direct official `Choice`, automatic per-object probabilities over video, and semantic class routing for an animal motion question.
-
-### Bus: choose from user-provided colors
-
-[examples/bus_color.py](examples/bus_color.py) detects the bus, then creates an official `Choice` keyed by that bus's object ID. The application explicitly supplies yellow, red, white, blue, black, and uncertain as the available choices.
-
-```bash
-python examples/bus_color.py
-```
-
-Expected terminal output:
-
-```text
-object_id   label  choice  confidence
-object_001  bus    blue    1.00
-```
-
-### Traffic: one live accident probability per pedestrian per sampled frame
-
-[examples/traffic_relations.py](examples/traffic_relations.py) supplies one English question and the semantic class `pedestrian`. JEV maps visual labels such as person or man to that class, while JEV Sees automatically binds the question to every current object ID. Scope decisions and accident probabilities share one JEV call per sampled frame.
-
-```bash
-python examples/traffic_relations.py
-```
-
-A real JEV run prints rows like these:
-
-```text
-frame_index  video_time_s  object_id   label   scope_probability  probability
-504          42.00         object_001  person  0.98               0.04
-510          42.50         object_001  person  0.99               0.05
-```
-
-The probability answers “Is this pedestrian currently involved in a car accident in this frame?” It does not add a two-second prediction horizon. Object IDs stay stable across consecutive samples; a new person receives a new ID.
-
-The application always keeps control of the question contract: callers explicitly choose `Choice`, `Noul`, or `Score`, and a `Choice` must include caller-provided options. JEV Sees does not infer question types from natural language or invent options for the user.
-
-### Animal motion: one Choice distribution per animal
-
-[examples/animal_motion.py](examples/animal_motion.py) uses an animal image or video selected in its `MEDIA` constant. The visual model may label an object `rabbit`, `dog`, or `horse`; JEV decides whether that label belongs to the requested `animal` class and returns the caller-provided motion-state distribution for every match.
-
-```bash
-python examples/animal_motion.py
-```
+<table>
+  <tr>
+    <th width="33%">Image · bus color</th>
+    <th width="33%">Video · pedestrian risk</th>
+    <th width="33%">Video · animal motion</th>
+  </tr>
+  <tr>
+    <td><img src="assets/bus_demo.png" alt="JEV identifies the bus as blue"></td>
+    <td><img src="assets/demo.gif" alt="JEV evaluates each pedestrian in a traffic video"></td>
+    <td><img src="assets/animal_demo.gif" alt="JEV identifies a black cat's motion"></td>
+  </tr>
+  <tr>
+    <td><strong>Question:</strong> What color is the bus?<br><strong>Answer:</strong> blue</td>
+    <td><strong>Question:</strong> Is this pedestrian currently involved in a car accident?<br><strong>Answer:</strong> one probability per pedestrian</td>
+    <td><strong>Question:</strong> What is this animal's current motion state?<br><strong>Answer:</strong> walking</td>
+  </tr>
+</table>
 
 ---
 
@@ -100,9 +40,9 @@ cd JEV_sees
 python -m pip install -e .
 ```
 
-JEV Sees requires Python 3.10+.
+JEV Sees requires Python 3.10+. The first vision run downloads the default Florence-2 and CLIP weights if they are not already available locally.
 
-### 2. Add a JEV API key
+### 2. Add your JEV API key
 
 Create a key at [console.typesafe.ai/keys](https://console.typesafe.ai/keys).
 
@@ -118,174 +58,169 @@ PowerShell:
 $env:TYPESAFE_API_KEY = "your-key"
 ```
 
-Both the official `TypeSafeClient` and the high-level video entry point can read this key. `observe()` and `state()` themselves remain local.
+### 3. Ask your first visual question
 
-### 3. Run the smallest example
+This is a complete program, not a wrapper around one of the repository examples:
+
+```python
+from jev_sees import Sees
+
+result = Sees().for_each("bus").choice(
+    "assets/bus.jpg",
+    "What color is this bus?",
+    choices=["yellow", "red", "white", "blue", "black", "uncertain"],
+    save="bus_answer.png",
+)
+
+for row in result.rows:
+    print(row["object_id"], row["choice"], row["confidence"])
+```
+
+Typical output:
+
+```text
+object_001 blue 1.0
+```
+
+The saved image includes the detected bus, its stable object ID, and JEV's answer.
+
+---
+
+## Included examples
+
+All three examples use the same flow: media + a question + an explicit answer type. Each script calls JEV and prints structured output in the terminal.
+
+### Bus color
+
+- **Input:** [`assets/bus.jpg`](assets/bus.jpg)
+- **Question:** “What color is the bus?”
+- **Answer type:** `Choice` from colors supplied by the application
 
 ```bash
 python examples/bus_color.py
 ```
-
-Expected terminal output for the included image:
 
 ```text
 object_id   label  choice  confidence
 object_001  bus    blue    1.00
 ```
 
-The example uses `Sees()(image, question, questions)` for local perception, state construction, and the official JEV call. Full source: [examples/bus_color.py](examples/bus_color.py)
+Source: [`examples/bus_color.py`](examples/bus_color.py)
 
----
+### Pedestrian accident probability
 
-## Perception, tracking, and scene memory
-
-`observe()` is the local visual layer behind JEV Sees:
-
-```python
-tracks = sees.observe("assets/bus.jpg")
-
-for obj in tracks:
-    print(obj["object_id"], obj["label"], obj["bbox_xyxy"])
-```
-
-A typical tracked object contains:
-
-```text
-object_id
-label
-confidence
-bbox_xyxy
-centroid_uv
-attributes.color_evidence.cv
-attributes.color_evidence.clip
-```
-
-Color is evidence, not an SDK verdict. The CV branch preserves pixel measurements and CLIP preserves its complete color probability distribution. Florence region captions are not sent to JEV because they can repeat labels or inject unverified relationships.
-
-Across video frames, JEV Sees keeps object IDs stable in private tracking memory. The prompt contains only objects detected in the current sampled frame. Their two most recent time-aware poses include `frame_index` and media time, so JEV can reason from box movement and the actual interval without receiving stale objects.
-
-The scene can also carry useful spatial context such as:
-
-- what is visible now
-- bounding-box overlap and gap
-- centroid distance
-- whether nearby objects appear to be approaching
-- metric 3D positions and gaps when RGB-D is available
-
-These are implementation details, but they unlock the product behavior that matters: **JEV can keep making structured judgments about a changing visual scene.**
-
-### Keeping `given_that` / state within the input limit
-
-JEV Sees sends structured visual context produced by `state()`, not video frames themselves. The implementation respects JEV's 31,000-token hard input limit and targets a more conservative maximum of **24,000 serialized characters**. It deliberately estimates one character as one token, leaving headroom for questions and protocol overhead.
-
-Compaction preserves every current object ID. It reduces relations, pose history, and optional attributes in that order. If the essential current-frame state still cannot fit, it raises an explicit error instead of silently dropping objects that have questions attached. The actual serialized length is available in `state["prompt_budget"]`, `sees.last_prompt_chars`, and the lower-right corner of rendered dashboards.
-
----
-
-## Question types
-
-`Choice`, `Noul`, `Score`, and `TypeSafeClient` are re-exported by `jev_sees` for a single import line. They are the official `typesafe-sdk` classes, so direct calls still use `client.system_one(...)` and official typed collections such as `response.choices`, `response.nouls`, and `response.scores`.
-
-The high-level object API makes the type explicit in the method name and automatically creates the official questions:
-
-```python
-Sees().probability(video, "Is this object blocking the road?")
-
-Sees().for_each("animal").choice(
-    video,
-    "What is this object's current motion state?",
-    choices=["stationary", "walking", "running", "uncertain"],
-)
-```
-
-Without `for_each(...)`, every detected object is returned. With it, JEV returns an additional class-membership probability per object; the SDK includes objects at or above `scope_threshold` and preserves the scope probabilities in structured results. The raw `Sees()(source, question, questions)` entry point remains available when an application wants to construct official `Choice`, `Noul`, or `Score` objects itself.
-
----
-
-## Video: one live probability per pedestrian per sampled frame
-
-[examples/traffic_relations.py](examples/traffic_relations.py) is intentionally a minimal terminal example. The application supplies `pedestrian` as its semantic class and an English accident question. The SDK creates the per-ID questions; no traffic plan or accident definition is built into JEV Sees.
-
-Video results are frame-primary in `result.frames`: every evaluated sample contains its `frame_index`, `video_time_s`, and the probability for every selected object in that frame. `result.rows` remains a per-object peak summary for compatibility; JSON and Excel exports also put frame data first.
-
-Video defaults to roughly two evaluated samples per second. Pass `every=1` to evaluate every frame or `every=N` to evaluate every Nth frame. Perception and JEV run only on sampled frames, and all selected objects in one sample are combined into one JEV request.
-
-With `save=`, the output includes bounding boxes labeled with object type, object ID, and the live answer. A selected object's right-panel row stays pinned after its first appearance. Probability rows show current value, peak, and sample count; Choice rows show the selected option and confidence. The lower-right corner shows the serialized state length.
-
-Run it with:
+- **Input:** the 42–50 second segment of [`assets/traffic.mp4`](assets/traffic.mp4)
+- **Question:** “Is this object currently involved in a car accident?”
+- **Answer type:** probability for every pedestrian in each sampled frame
 
 ```bash
 python examples/traffic_relations.py
 ```
 
-This example calls JEV and therefore requires `TYPESAFE_API_KEY`.
+```text
+frame_index  video_time_s  object_id   label   scope_probability  probability
+504          42.00         object_001  person  0.89               0.05
+510          42.50         object_001  person  0.92               0.04
+```
 
-Source video credits: [assets/CREDITS.md](assets/CREDITS.md)
+This asks about what is happening in the current frame; it is not a future-accident forecast. Source: [`examples/traffic_relations.py`](examples/traffic_relations.py). Video attribution: [`assets/CREDITS.md`](assets/CREDITS.md).
+
+### Animal motion
+
+- **Input:** [`assets/black_cat_walking.mp4`](assets/black_cat_walking.mp4)
+- **Question:** “What is this animal's current motion state?”
+- **Answer type:** `Choice` from `stationary`, `walking`, `running`, and `uncertain`
+
+```bash
+python examples/animal_motion.py
+```
+
+```text
+frame_index  video_time_s  object_id   label      choice    confidence
+0            0.00          object_001  black cat  uncertain 0.60
+120          5.00          object_001  black cat  walking   0.23
+```
+
+Source: [`examples/animal_motion.py`](examples/animal_motion.py)
 
 ---
 
-## RGB-D: let depth decide what exists
+## Choose the answer you need
 
-RGB-only mode starts from Florence-2 dense-region captions. Florence discovers boxes and generates their labels; callers do not pass an object vocabulary.
+JEV Sees does not guess the answer format from the wording of a question. Your code chooses it explicitly:
 
-RGB-D mode takes a different path: **depth clusters decide which physical objects exist**, and overlapping Florence regions provide free-text names when available.
+- `probability(...)` returns an independent value from 0 to 1 for every selected object. It uses JEV's official `Noul` question type.
+- `choice(...)` selects from options supplied by your application and returns the selected option, confidence, and probability distribution.
+- `score(...)` evaluates every selected object against a rubric supplied by your application.
 
-That matters when a 2D detector misses something that is still physically present.
+```python
+from jev_sees import Sees
 
-| | | |
-| --- | --- | --- |
-| ![frame 6](assets/frame_06.png) | ![frame 13](assets/frame_13.png) | ![frame 15](assets/frame_15.png) |
+sees = Sees()
 
-With camera intrinsics, RGB-D observations can also include `position_m`, which lets the scene state carry metric 3D positions and object-to-object gaps.
+risk = sees.for_each("pedestrian").probability(
+    "assets/traffic.mp4",
+    "Is this pedestrian currently involved in a car accident?",
+    start=504,
+    end=600,
+)
+
+motion = sees.for_each("animal").choice(
+    "assets/black_cat_walking.mp4",
+    "What is this animal's current motion state?",
+    choices=["stationary", "walking", "running", "uncertain"],
+)
+
+occlusion = sees.for_each("package").score(
+    "warehouse.jpg",
+    "How obstructed is this package?",
+    rubric=["0: clear", "1: partly obstructed", "2: heavily obstructed"],
+)
+```
+
+Call `Sees().probability(...)`, `.choice(...)`, or `.score(...)` without `for_each(...)` to ask about every detected object. `Choice`, `Noul`, `Score`, and `TypeSafeClient` are also re-exported for applications that want to construct official JEV questions directly.
 
 ---
 
-## Performance
+## Inputs and results
 
-The earlier YOLO benchmark does not describe the Florence-2 pipeline and has intentionally been removed from the current documentation. A new image and video benchmark is required before publishing latency claims for this backend.
+### Images
+
+Pass an image path, a PIL image, or an RGB NumPy array. Each result row identifies the object that was judged.
+
+### Video
+
+Object IDs remain stable across consecutive sampled frames, so answers can be graphed, thresholded, or used to trigger an action. By default, JEV Sees samples roughly twice per second. Use `every=1` for every frame or `every=N` for every Nth frame.
+
+### RGB-D cameras
+
+RGB-D is supported for live camera loops through `observe(rgb, depth, intrinsics=...)`. When camera intrinsics are available, objects can include metric 3D positions and distances. The same objects can then be passed to JEV with `ask(...)`.
+
+### Program and file output
+
+- `result.answers`: JEV answers keyed by object ID
+- `result.rows`: one summary row per object
+- `result.frames`: answers grouped by sampled video frame
+- `save="output.gif"`: annotated image, GIF, or video with live answers
+- `json="output.json"` and `excel="output.xlsx"`: structured exports
+
+Every selected object in one sampled frame is included in the same JEV request.
 
 ---
 
-## Models and weights
+## Models and local vision
 
-Weights are intentionally not stored in this repository.
-
-Florence-2 is loaded from Hugging Face on first use. The default is `microsoft/Florence-2-base-ft`; choose another compatible checkpoint with:
+Image and video perception run locally. The default detector/captioner is `microsoft/Florence-2-base-ft`; select another compatible checkpoint with:
 
 ```python
 Sees(florence_model="microsoft/Florence-2-large-ft")
 ```
 
-If `JEV_SEES_ROBO_ROOT` points to a directory containing:
-
-```text
-weights/clip/ViT-B-32.pt
-```
-
-JEV Sees uses those files.
-
-JEV Sees uses that local CLIP weight for color evidence. Otherwise CLIP downloads its weight on first use.
+If `JEV_SEES_ROBO_ROOT` points to a project containing `weights/clip/ViT-B-32.pt`, JEV Sees uses that local CLIP weight. Otherwise it downloads the weight on first use. Model weights are not committed to this repository.
 
 ---
 
-## Troubleshooting
-
-If this fails:
-
-```bash
-python -c "import jev_sees"
-```
-
-the most common cause is that `pip` installed the package into a different Python environment from the `python` command you are using.
-
-Use:
-
-```bash
-python -m pip install -e .
-python -c "import jev_sees; print(jev_sees.__version__)"
-```
-
-Using `python -m pip` keeps installation and execution on the same interpreter.
+## Development
 
 Run the test suite with:
 
@@ -293,38 +228,11 @@ Run the test suite with:
 python -m unittest discover -s tests -v
 ```
 
----
+If `import jev_sees` fails after installation, make sure `python -m pip install -e .` and your program use the same Python interpreter.
 
-## Where I started
+JEV Sees began as the visual layer of [JEV Control Your Roboarm](https://github.com/CharlesFeng0314/JEV_control_your_roboarm) and is now a standalone project for images, video, cameras, and robotics.
 
-I first built [JEV Control Your Roboarm](https://github.com/CharlesFeng0314/JEV_control_your_roboarm), connecting TypeSafe AI's JEV to robot-arm action selection. While building its vision path, I realized that capability should not belong to one arm, so I extracted and generalized it into JEV Sees.
-
-```text
-TypeSafe AI / JEV
-        │
-        ├── JEV Control Your Roboarm: JEV judgment → robot-arm action
-        │          │
-        │          └── extract and generalize the visual layer
-        │                              ↓
-        └────────────────────────── JEV Sees: image / video / RGB-D → structured visual state
-```
-
-- **[JEV Control Your Roboarm](https://github.com/CharlesFeng0314/JEV_control_your_roboarm)** — my original project, connecting JEV judgments to robot-arm action selection
-- **JEV Sees** — the standalone vision project I derived from it, converting images, video, and RGB-D into structured context that JEV can judge
-
-Together they follow the same direction: **see → judge → act.**
-
----
-
-## Status
-
-JEV Sees is currently **v0.1.0** and intentionally experimental.
-
-The public surface stays small: `Sees(...)` is the high-level image/video product entry point, while `observe()` and `state()` expose the visual layer for direct official JEV calls. Official JEV classes are re-exported unchanged. The perception stack, scene representation, examples, and evaluation are still evolving.
-
-If you try it on another camera, another robot, a weird scene, or a use case the examples did not anticipate, open an issue or start a discussion. Those experiments are exactly what this repo is for.
-
----
+The project is currently **v0.1.0** and experimental. The public API, perception stack, and examples may continue to change.
 
 ## License
 
