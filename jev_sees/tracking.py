@@ -106,10 +106,15 @@ class TrackBank:
             right = previous.get("bbox_xyxy")
             if not left or not right:
                 return 1e6
+            # Label-incompatible observations must not participate in the
+            # assignment. Rejecting them only after Hungarian matching lets a
+            # small part detection (for example ``sneakers``) consume the
+            # previous ``person`` slot and forces the person onto a new ID.
+            if not _same_label(current, previous):
+                return 1e6
             overlap_cost = 1.0 - box_iou(left, right)
             motion_cost = _centroid_distance(left, right) / max(_box_span(left), _box_span(right), 1.0)
-            label_bonus = 0.12 if _same_label(current, previous) else 0.0
-            return min(overlap_cost, motion_cost) - label_bonus
+            return min(overlap_cost, motion_cost) - 0.12
         current_position = _position(current)
         previous_position = _position(previous)
         if current_position is None or previous_position is None:
@@ -142,8 +147,14 @@ def _centroid_distance(left: list[float], right: list[float]) -> float:
 
 
 def _same_label(current: dict[str, Any], previous: dict[str, Any]) -> bool:
-    left = " ".join(str(current.get("label") or "").lower().split())
-    right = " ".join(str(previous.get("label") or "").lower().split())
+    return labels_compatible(current.get("label"), previous.get("label"))
+
+
+def labels_compatible(left_label: object, right_label: object) -> bool:
+    """Return whether two visual labels can describe the same tracked object."""
+
+    left = " ".join(str(left_label or "").lower().split())
+    right = " ".join(str(right_label or "").lower().split())
     if not left or not right:
         return True
     if left == right or left in right or right in left:

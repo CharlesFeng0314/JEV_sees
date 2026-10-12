@@ -99,6 +99,25 @@ class PerceptionTests(unittest.TestCase):
         self.assertEqual(set(evidence), {"cv", "clip", "caption"})
         self.assertEqual(evidence["caption"]["text"], "a blue city bus")
 
+    def test_duplicate_dense_regions_become_one_object_before_tracking(self) -> None:
+        class Perceptor:
+            def detect(self, rgb):
+                return [
+                    {"label": "person", "bbox_xyxy": [83.3, 32.6, 126.3, 110.8]},
+                    {"label": "person", "bbox_xyxy": [88.7, 33.5, 123.3, 109.5]},
+                    {"label": "person", "bbox_xyxy": [316.4, 30.5, 360.1, 106.9]},
+                    {"label": "person", "bbox_xyxy": [318.7, 28.3, 350.1, 107.8]},
+                ]
+
+            def color_names(self, crops):
+                return ["unknown"] * len(crops)
+
+        tracks = Sees(perceptor=Perceptor()).observe(np.zeros((480, 768, 3), dtype=np.uint8))
+
+        self.assertEqual(len(tracks), 2)
+        self.assertEqual([item["object_id"] for item in tracks], ["object_001", "object_002"])
+        self.assertEqual(tracks[0]["bbox_xyxy"], [83, 33, 126, 111])
+
 
 class TrackingTests(unittest.TestCase):
     def test_same_box_keeps_id(self) -> None:
@@ -128,6 +147,25 @@ class TrackingTests(unittest.TestCase):
         first = bank.update([{"label": "person", "bbox_xyxy": [10, 10, 40, 90]}])
         second = bank.update([{"label": "car", "bbox_xyxy": [42, 10, 72, 90]}])
         self.assertNotEqual(first[0]["object_id"], second[0]["object_id"])
+
+    def test_incompatible_part_detection_cannot_steal_person_track(self) -> None:
+        bank = TrackBank("image")
+        previous = bank.update(
+            [
+                {"label": "person", "bbox_xyxy": [203.1, 7.6, 250.0, 87.9]},
+                {"label": "person", "bbox_xyxy": [118.7, 28.3, 150.1, 107.8]},
+            ]
+        )
+
+        current = bank.update(
+            [
+                {"label": "person", "bbox_xyxy": [254.6, 0.2, 285.3, 60.7]},
+                {"label": "sneakers", "bbox_xyxy": [259.2, 53.8, 269.2, 60.7]},
+            ]
+        )
+
+        self.assertEqual(current[0]["object_id"], previous[0]["object_id"])
+        self.assertNotEqual(current[1]["object_id"], previous[0]["object_id"])
 
     def test_camera_position_keeps_id(self) -> None:
         bank = TrackBank("camera")

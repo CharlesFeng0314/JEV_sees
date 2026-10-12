@@ -10,11 +10,13 @@ from PIL import Image
 from .color import cv_color_evidence
 from .geometry import cluster_depth, default_intrinsics, depth_to_meters, mask_facts
 from .runtime import VisionRuntime
-from .tracking import box_iou
+from .tracking import box_iou, labels_compatible
+
+_DUPLICATE_IOU = 0.65
 
 
 def perceive_rgb(runtime: VisionRuntime, rgb: np.ndarray) -> list[dict[str, Any]]:
-    detections = runtime.detect(rgb)
+    detections = _deduplicate_detections(runtime.detect(rgb))
     crops = [_crop(rgb, item["bbox_xyxy"]) for item in detections]
     clip_evidence = _clip_color_evidence(runtime, crops)
     observations = []
@@ -40,6 +42,47 @@ def perceive_rgb(runtime: VisionRuntime, rgb: np.ndarray) -> list[dict[str, Any]
             observation["confidence"] = float(detection["score"])
         observations.append(observation)
     return observations
+
+
+def _deduplicate_detections(detections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Suppress repeated same-object regions before object IDs are assigned.
+
+    Florence dense-region captioning can emit two same-label boxes for one
+    object. TrackBank deliberately treats every observation as a physical
+    object, so duplicate regions must be resolved at the perception boundary.
+    The conservative IoU threshold avoids merging nearby distinct objects.
+    """
+
+    kept: list[dict[str, Any]] = []
+    for detection in detections:
+        duplicate_index = next(
+            (
+                index
+                for index, candidate in enumerate(kept)
+                if labels_compatible(detection.get("label"), candidate.get("label"))
+                and box_iou(detection.get("bbox_xyxy") or [], candidate.get("bbox_xyxy") or [])
+                >= _DUPLICATE_IOU
+            ),
+            None,
+        )
+        if duplicate_index is None:
+            kept.append(detection)
+            continue
+        if _detection_priority(detection) > _detection_priority(kept[duplicate_index]):
+            kept[duplicate_index] = detection
+    return kept
+
+
+def _detection_priority(detection: dict[str, Any]) -> tuple[int, float, float]:
+    score = detection.get("score", detection.get("confidence"))
+    numeric_score = float(score) if score is not None else 0.0
+    box = detection.get("bbox_xyxy") or []
+    area = 0.0
+    if len(box) == 4:
+        area = max(0.0, float(box[2]) - float(box[0])) * max(
+            0.0, float(box[3]) - float(box[1])
+        )
+    return (int(score is not None), numeric_score, area)
 
 
 def perceive_rgbd(
