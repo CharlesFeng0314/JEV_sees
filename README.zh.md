@@ -2,11 +2,15 @@
 
 # JEV Sees
 
-### 给 JEV 一双眼睛。
+### 让 JEV 看懂图片和视频，把视觉判断直接交给程序。
 
 **JEV 很会判断：快、结构化，而且天然适合做封闭式决策。**
 
-把图片、视频流或者 RGB-D 相机接进来以后，JEV 就可以直接参与视觉世界里的判断：识别目标、估计风险、给状态打分，或者一次判断画面里的多个对象。
+[JEV](https://typesafe.ai/blog/introducing-system-one-models-and-jev) 是 [TypeSafe AI](https://typesafe.ai/) 发布的首个 **System One Model**，专门面向软件中的快速、结构化决策。JEV、System One API 和 `typesafe-sdk` 都由 TypeSafe AI 提供；**JEV Sees 是我基于这些能力开发的独立开源项目，并非 TypeSafe AI 的官方视觉产品。**
+
+JEV Sees 衍生自我的另一个项目：[JEV Control Your Roboarm](https://github.com/CharlesFeng0314/JEV_control_your_roboarm)。我最初在那个项目里让 JEV 根据视觉信息控制机械臂；现在，我把视觉能力从单一机器人场景中抽离出来，做成一个可以复用在图片、视频、监控和机器人上的产品。
+
+视觉感知在本地完成：原始像素会被转换成带 bbox、标签、稳定 object ID、位置历史和空间关系的场景状态，再交给 JEV 判断。你定义问题和选项，JEV Sees 负责让每一次视觉判断都有对象、有上下文、能持续、可直接写进程序。
 
 **一帧画面，多个对象，一次 JEV 调用。**
 
@@ -14,110 +18,75 @@
 
 > 上面的 Demo 里，同一个采样帧中所有可见行人的事故风险，都由一次 JEV 调用一起返回。
 
-**JEV 负责判断，JEV Sees 让它看见，[JEV Control](https://github.com/CharlesFeng0314/JEV_control_your_roboarm) 让它行动。**
+- 图片、视频和 RGB-D 使用同一个入口
+- 每个对象都有 bbox、标签和跨帧稳定的 object ID
+- 每个采样帧的多个对象合并进一次 JEV 调用
+- 结果可以直接输出到终端、JSON、Excel 或实时可视化面板
 
 ---
 
-## 为什么要给 JEV 加上视觉？
+## 从一帧图片，到持续运行的视觉判断
 
-JEV 原本就很擅长一件事：**快速、封闭、结构化地做判断**。
+JEV Sees 把问题绑定到画面里的具体对象，并让这个问题跟着 object ID 穿过连续帧。每个采样时刻都会得到明确的 choice、probability 或 score，应用可以立刻显示、记录、设阈值或触发下一步动作。
 
-choice、probability、score，这些结果很适合直接交给程序继续执行。
+你可以持续问：
 
-但没有视觉之后，很多本来很自然的问题就根本问不了：
-
-- 这个行人现在危险吗？
+- 这一帧里每个行人正在发生车祸的概率是多少？
 - 机器人应该关注哪个物体？
 - 目标的状态有没有发生变化？
 - 画面里哪个对象最符合这个条件？
-- 能不能把同一个问题一次问给这一帧里的所有人？
+- 这一帧里所有目标能不能一次完成判断？
 
-JEV Sees 做的就是把这扇门打开。
-
-它让相机成为 JEV 的输入，让 JEV 不只是在文字或结构化信息上做判断，而是开始直接参与真实视觉场景里的决策。
-
-### 和 VLM 的区别，不在于“谁会看图”
-
-VLM 当然会看图，而且非常擅长开放式视觉理解：描述画面、解释场景、回答宽泛问题。
-
-JEV 更有意思的地方，是当你的问题已经很明确时，你可以把视觉判断做得**更快、更结构化、更适合重复调用，也更适合并发处理很多个对象**。
-
-| 常见 VLM 用法 | JEV Sees + JEV |
-| --- | --- |
-| “描述一下发生了什么” | “这一帧里每个行人危险吗？” |
-| 自由文本生成 | choice / probability / score |
-| 一次问一个大问题 | 一次塞进很多个封闭式问题 |
-| 结果主要给人看 | 结果可以直接给程序用 |
-| 更适合开放式理解 | 更适合持续重复做决策 |
-
-这也是为什么给 JEV 加上视觉以后，它的使用空间会一下子变大：视频、机器人、监控、自动化测试、实时决策，都会变得很自然。
+同一个流程可以用于单张图片，也可以在视频、监控、自动化测试和机器人中持续运行。问题和选项由你控制，对象跟踪、场景上下文、批量调用和结果整理交给 JEV Sees。
 
 ---
 
-## 它能拿来问什么？
+## 运行示例
 
-只要你的问题可以写成一个封闭式判断，就可以交给 JEV。
+仓库自带一张 bus 图片和一段 traffic 视频。示例都保持得很小：调用真实 JEV，并把结构化结果打印在终端。它们分别展示直接使用官方 `Choice`、视频中自动生成的逐对象概率，以及 animal motion 问题中的语义类别路由。
 
-### 识别：这辆巴士是什么颜色？
+### Bus：在用户给定的颜色选项中判断
 
-```python
-from jev_sees import Choice, Sees, TypeSafeClient
+[examples/bus_color.py](examples/bus_color.py) 先检测 bus，再以该 bus 的 object ID 创建官方 `Choice`。颜色选项由示例代码明确给出：yellow、red、white、blue、black、uncertain。
 
-question = "What color is the bus?"
-sees = Sees()
-sees.observe("assets/bus.jpg")
-
-with TypeSafeClient() as client:
-    response = client.system_one(
-        state=sees.state(question),
-        questions={
-            "bus_color": Choice(
-                instructions=question,
-                criteria={"yellow": None, "red": None, "blue": None, "uncertain": None},
-            )
-        },
-    )
-
-print(response.choices["bus_color"].choice)
-# blue
+```bash
+python examples/bus_color.py
 ```
 
-`JEV Sees` 只负责生成 `state`。`Choice`、`system_one` 调用和 response 全部保持 `typesafe-sdk` 的官方写法。
+预期终端输出：
 
-### 概率：这个对象现在危险吗？
-
-```python
-from jev_sees import Noul
-
-question = "Is object_003 in immediate danger from a vehicle?"
-state = sees.state(question)
-
-with TypeSafeClient() as client:
-    response = client.system_one(
-        state=state,
-        questions={"in_danger": Noul(instructions=question)},
-    )
-
-print(response.nouls["in_danger"].noul)
-# “yes”的概率
+```text
+object_id   label  choice  confidence
+object_001  bus    blue    1.00
 ```
 
-### 一次判断画面里的多个对象
+### Traffic：每个采样帧中，每个行人的实时事故概率
 
-```python
-questions = {
-    obj["object_id"]: Noul(
-        instructions=f"Is {obj['object_id']} in immediate danger from a car?"
-    )
-    for obj in tracks
-    if obj["label"] == "person"
-}
+[examples/traffic_relations.py](examples/traffic_relations.py) 只提供一个英文问题和语义类别 `pedestrian`。JEV 负责把 person、man 等视觉标签映射到这个类别；JEV Sees 自动把问题绑定到当前帧的每个 object ID。类别判断和事故概率在每个采样帧共用一次 JEV 调用。
 
-with TypeSafeClient() as client:
-    response = client.system_one(state=sees.state("Pedestrian risk"), questions=questions)
+```bash
+python examples/traffic_relations.py
 ```
 
-每个行人仍然是一道有名字的官方 `Noul`，结果直接从 `response.nouls[object_id]` 读取。
+真实 JEV 调用的输出形如：
+
+```text
+frame_index  video_time_s  object_id   label   scope_probability  probability
+504          42.00         object_001  person  0.98               0.04
+510          42.50         object_001  person  0.99               0.05
+```
+
+这个概率回答的是“当前帧中，该行人正在发生 car accident 吗？”，不额外预测未来两秒。object ID 会在连续采样帧间保持稳定；新的行人才会得到新的 ID。
+
+问题的控制权始终在应用侧：调用者明确选择 `Choice`、`Noul` 或 `Score`；使用 `Choice` 时，候选项也必须由调用者明确给出。JEV Sees 不会从自然语言里猜问题类型，也不会替用户发明选项。
+
+### Animal motion：每个 animal 一份 Choice 概率分布
+
+[examples/animal_motion.py](examples/animal_motion.py) 通过 `MEDIA` 常量指定动物图片或视频。视觉模型可以把对象标成 `rabbit`、`dog` 或 `horse`；JEV 判断它是否属于用户指定的 `animal` 类别，再为每个匹配对象返回用户定义的运动状态概率。
+
+```bash
+python examples/animal_motion.py
+```
 
 ---
 
@@ -153,32 +122,18 @@ $env:TYPESAFE_API_KEY = "your-key"
 
 ### 3. 跑最小示例
 
-```python
-from jev_sees import Choice, Sees, TypeSafeClient
-
-question = "What color is the bus?"
-sees = Sees()
-sees.observe("assets/bus.jpg")
-with TypeSafeClient() as client:
-    response = client.system_one(
-        state=sees.state(question),
-        questions={
-            "bus_color": Choice(
-                instructions=question,
-                criteria={"yellow": None, "red": None, "blue": None, "uncertain": None},
-            )
-        },
-    )
-print(response.choices["bus_color"].choice)
+```bash
+python examples/bus_color.py
 ```
 
-仓库自带图片上的预期结果：
+仓库自带图片上的预期终端结果：
 
 ```text
-blue
+object_id   label  choice  confidence
+object_001  bus    blue    1.00
 ```
 
-完整代码：[examples/bus_color.py](examples/bus_color.py)
+示例内部使用 `Sees()(image, question, questions)` 完成视觉感知、state 构建和官方 JEV 调用。完整代码：[examples/bus_color.py](examples/bus_color.py)
 
 ---
 
@@ -203,18 +158,15 @@ bbox_xyxy
 centroid_uv
 attributes.color_evidence.cv
 attributes.color_evidence.clip
-attributes.color_evidence.caption
 ```
 
-颜色在 state 中是证据，不是 SDK 提前拍板的答案。CV 分支保留像素测量，CLIP 保留完整颜色概率分布，Florence 的原始 region caption 也会一同保留。JEV 可以据此判断三路结果是否一致，而不是只收到一个预选颜色字符串。
+颜色在 state 中是证据，不是 SDK 提前拍板的答案。CV 分支保留像素测量，CLIP 保留完整颜色概率分布。Florence region caption 不再发送给 JEV，避免重复标签或注入未经验证的物体关系。
 
-连续处理视频帧时，JEV Sees 会尽量维持稳定的 object ID，并维护 scene memory。采样记录沿用现有的 `pose_history`，并附带 `frame_index` 和视频时间；当前可见对象最近两次带时间的 pose 会进入 JEV state，因此 JEV 可以直接根据框的位置变化和真实帧间隔判断运动。同一个视觉问题可以持续跟着“同一个对象”走，而不是每一帧都重新认识整个世界。
+连续处理视频帧时，JEV Sees 会在内部跟踪记忆中尽量维持稳定的 object ID。发送给 JEV 的 state 只包含当前采样帧实际检测到的对象；当前对象最近两次带 `frame_index` 和视频时间的 pose 会进入 state，因此 JEV 可以根据框的位置变化和真实帧间隔判断运动，同时不会看到已经消失的旧对象。
 
 场景里还可以继续带上：
 
 - 当前哪些对象可见
-- 之前见过哪些对象
-- 某个历史对象是不是已经 stale
 - 两个框是否重叠、间距多大
 - 两个对象中心点距离
 - 相邻对象是否正在靠近
@@ -222,21 +174,43 @@ attributes.color_evidence.caption
 
 这些属于实现层细节。真正重要的是它带来的产品效果：**JEV 可以持续对一个变化中的视觉场景做结构化判断。**
 
+### `given_that` / state 的长度控制
+
+JEV Sees 发送给 JEV 的不是视频帧本身，而是由 `state()` 生成的结构化视觉上下文。当前实现遵守 JEV 的 31,000 token 输入硬限制，并把序列化后的 state 控制在更保守的 **24,000 字符目标预算**内；这里按“一个字符等于一个 token”估算，主动为问题和协议开销留出空间。
+
+长度收缩会保留当前帧的每个 object ID，再依次压缩关系、pose history 和可选属性。如果当前帧最小必要状态仍然超限，会明确报错，而不是静默删除已经绑定问题的对象。`state["prompt_budget"]`、`sees.last_prompt_chars` 和展示面板右下角都可以看到实际序列化长度。
+
 ---
 
 ## 支持哪些问题类型？
 
 `jev_sees` 会直接重新导出官方的 `Choice`、`Noul`、`Score` 和 `TypeSafeClient`，因此只需要一行 import。它们仍然是 `typesafe-sdk` 的原始类；直接调用仍写 `client.system_one(...)`，输出仍从 `response.choices`、`response.nouls` 和 `response.scores` 读取。
 
-JEV Sees 不会根据自然语言猜问题类型，也不会把 list 或 dict 转成 JEV question。应用必须自己构造官方 question object。处理视频时，`questions=` 可以接收一个函数：它拿到当前 tracked objects，再返回官方 questions 映射。
+高级逐对象 API 会通过方法名明确选择输出类型，并自动创建官方问题：
+
+```python
+Sees().probability(video, "Is this object blocking the road?")
+
+Sees().for_each("animal").choice(
+    video,
+    "What is this object's current motion state?",
+    choices=["stationary", "walking", "running", "uncertain"],
+)
+```
+
+不调用 `for_each(...)` 时，输出当前帧检测到的全部对象；调用后，JEV 会额外返回每个对象的类别匹配概率，SDK 按 `scope_threshold` 组织主结果，并在结构化结果中保留原始 scope probability。应用如果需要自己构造官方 `Choice`、`Noul` 或 `Score`，仍然可以继续使用底层的 `Sees()(source, question, questions)` 入口。
 
 ---
 
 ## 视频：每个采样帧、每个行人一个实时概率
 
-[examples/traffic_relations.py](examples/traffic_relations.py) 保持为只向终端输出的最小示例。示例里很短的 `questions()` 属于应用代码：它筛选当前行人，并为每个 object ID 构造官方 `Noul`。JEV Sees 内部没有 traffic plan，也不会分析 prompt 后擅自生成问题或选项。
+[examples/traffic_relations.py](examples/traffic_relations.py) 保持为只向终端输出的最小示例。应用只提供 `pedestrian` 语义类别和一个英文事故问题，SDK 自动构造每个 ID 的问题。JEV Sees 内部没有 traffic plan，也没有内置 car accident 的定义。
 
-视频结果以 `result.frames` 为主：每个被实际判断的采样帧带有 `frame_index`、`video_time_s`，以及该帧所有被选对象的概率。`result.rows` 仍保留每个对象的峰值摘要，方便兼容已有代码。使用 `save=` 时，视频会绘制带标签的 bbox 和固定对象行的右侧实时统计面板。
+视频结果以 `result.frames` 为主：每个被实际判断的采样帧带有 `frame_index`、`video_time_s`，以及该帧所有被选对象的概率。`result.rows` 仍保留每个对象的峰值摘要，方便兼容已有代码；JSON 和 Excel 导出同样把帧数据放在首要位置。
+
+默认视频采样频率约为每秒两次。传入 `every=1` 可以逐帧判断，传入 `every=N` 则每 N 帧判断一次。只有采样帧才会运行感知和 JEV 调用。同一采样帧中所有被选择的对象合并成一次 JEV 请求。
+
+使用 `save=` 时，输出会绘制带物体标签、object ID 和实时答案的 bbox，并加入右侧统计面板。某个被选择对象首次出现后，它的行会固定保留；概率任务显示当前值、峰值和样本数，Choice 任务显示选择与 confidence，右下角同时显示 state 长度。
 
 运行：
 
@@ -321,29 +295,24 @@ python -m unittest discover -s tests -v
 
 ---
 
-## JEV Family
+## 我从哪里开始
 
-JEV Sees 背后的想法其实很简单：**JEV 不应该只停留在文字世界里。**
-
-给它眼睛，它就能判断眼前发生的事。
-再给它双手，这些判断就可以变成真实动作。
+我先做了 [JEV Control Your Roboarm](https://github.com/CharlesFeng0314/JEV_control_your_roboarm)，把 TypeSafe AI 的 JEV 接到机械臂动作选择上。做到视觉部分时，我意识到这套能力不应该只属于一台机械臂，于是把它抽离、泛化，做成了 JEV Sees。
 
 ```text
-              JEV
-          结构化判断
-           /       \
-          /         \
-    JEV Sees     JEV Control
-       眼睛           双手
-       视觉          机器人动作
+TypeSafe AI / JEV
+        │
+        ├── JEV Control Your Roboarm：JEV 判断 → 机械臂动作
+        │          │
+        │          └── 抽离并泛化视觉能力
+        │                         ↓
+        └──────────────────── JEV Sees：图片 / 视频 / RGB-D → 结构化视觉状态
 ```
 
-- **JEV Sees**：让 JEV 接收图片、视频和 RGB-D 相机输入
-- **[JEV Control Your Roboarm](https://github.com/CharlesFeng0314/JEV_control_your_roboarm)**：把 JEV 的判断接到机械臂动作选择上
+- **[JEV Control Your Roboarm](https://github.com/CharlesFeng0314/JEV_control_your_roboarm)**：我的原始项目，把 JEV 的判断接到机械臂动作选择上
+- **JEV Sees**：我由此衍生出的独立视觉项目，把图片、视频和 RGB-D 转成 JEV 可判断的结构化上下文
 
-整个方向可以概括成一句话：
-
-**see → judge → act**
+它们组合起来仍然是同一个方向：**see → judge → act**。
 
 ---
 

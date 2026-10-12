@@ -14,16 +14,20 @@ class Result:
         self,
         response: Any = None,
         *,
+        answers: dict[str, Any] | None = None,
         rows: list[dict[str, Any]] | None = None,
         timeline: list[dict[str, Any]] | None = None,
         frames: list[dict[str, Any]] | None = None,
         question: str = "",
+        scope: dict[str, Any] | None = None,
     ):
         self.response = response
+        self._answers = None if answers is None else dict(answers)
         self.rows = list(rows or [])
         self.timeline = list(timeline or [])
         self.frames = list(frames or [])
         self.question = question
+        self.scope = None if scope is None else dict(scope)
 
     def __str__(self) -> str:
         if self.frames:
@@ -45,6 +49,8 @@ class Result:
 
     @property
     def answers(self) -> dict[str, Any]:
+        if self._answers is not None:
+            return dict(self._answers)
         if self.response is None:
             return {}
         return self.response.answers
@@ -69,6 +75,8 @@ class Result:
                 "summary": self.rows,
                 "timeline": self.timeline,
             }
+            if self.scope is not None:
+                payload["for_each"] = self.scope
             if self.response is not None:
                 payload["response"] = self.response.model_dump()
             return payload

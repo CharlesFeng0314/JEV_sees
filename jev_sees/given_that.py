@@ -12,22 +12,17 @@ from .tracking import box_gap, box_iou
 
 MAX_JEV_INPUT_TOKENS = 31_000
 TARGET_PROMPT_CHARS = 24_000
-MAX_OBJECTS = 16
-MIN_OBJECTS = 4
 NEAR_GAP_PX = 40.0
 
 _OBJECT_KEYS = (
     "object_id",
     "label",
-    "description",
     "attributes",
     "confidence",
     "bbox_xyxy",
     "centroid_uv",
     "position_m",
     "observation_count",
-    "currently_visible",
-    "stale",
     "pose_observation_count",
     "recent_poses",
 )
@@ -46,6 +41,14 @@ def public_object(item: dict[str, Any], *, include_recent_poses: bool = True) ->
         if key == "attributes" and isinstance(value, dict):
             color_evidence = value.get("color_evidence")
             if isinstance(color_evidence, dict):
+                # Region captions frequently repeat the detector label and can
+                # inject unverified relations into otherwise geometric state.
+                # Keep measured CV/CLIP evidence, but do not send the caption.
+                color_evidence = {
+                    name: evidence
+                    for name, evidence in color_evidence.items()
+                    if name in {"cv", "clip"}
+                }
                 summary["attributes"] = {
                     "color_evidence": _public_value(color_evidence),
                 }
@@ -148,13 +151,11 @@ def uncertainty_for(objects: list[dict[str, Any]]) -> list[str]:
     notes = []
     if not objects:
         notes.append("No object is visible in the current frame.")
-    stale = [item["object_id"] for item in objects if item.get("stale")]
-    if stale:
-        notes.append("Stale remembered objects: " + ", ".join(stale))
     weak = [
         item["object_id"]
         for item in objects
-        if item.get("currently_visible") and float(item.get("confidence") or 0.0) < 0.2
+        if item.get("confidence") is not None
+        and float(item["confidence"]) < 0.2
     ]
     if weak:
         notes.append("Low-confidence visible objects: " + ", ".join(weak))
@@ -179,7 +180,6 @@ def fit_prompt_budget(state: dict[str, Any]) -> dict[str, Any]:
         "serialized_chars": 0,
         "conservative_token_estimate": 0,
     }
-    known = list((bounded.get("scene_memory") or {}).get("known_objects") or [])
     visible = list((bounded.get("current_scene") or {}).get("visible_objects") or [])
     pairs = list(bounded.get("relations") or [])
     while _over_budget(bounded) and pairs:
@@ -189,35 +189,21 @@ def fit_prompt_budget(state: dict[str, Any]) -> dict[str, Any]:
         poses = item.get("recent_poses")
         if isinstance(poses, list) and len(poses) > 2:
             item["recent_poses"] = poses[-2:]
-    while _over_budget(bounded) and len(known) > MIN_OBJECTS:
-        dropped = known.pop()
-        bounded["scene_memory"]["known_objects"] = known
-        visible = [item for item in visible if item.get("object_id") != dropped.get("object_id")]
-        bounded["current_scene"]["visible_objects"] = visible
-    if _over_budget(bounded):
-        for collection in (known, visible):
-            for item in collection:
-                item.pop("description", None)
     if _over_budget(bounded):
         for item in reversed(visible):
             item.pop("recent_poses", None)
             if not _over_budget(bounded):
                 break
     if _over_budget(bounded):
-        for collection in (known, visible):
-            for item in reversed(collection):
-                item.pop("attributes", None)
-                if not _over_budget(bounded):
-                    break
+        for item in reversed(visible):
+            item.pop("attributes", None)
             if not _over_budget(bounded):
                 break
-    while _over_budget(bounded) and len(known) > 1:
-        dropped = known.pop()
-        bounded["scene_memory"]["known_objects"] = known
-        visible = [item for item in visible if item.get("object_id") != dropped.get("object_id")]
-        bounded["current_scene"]["visible_objects"] = visible
     if _over_budget(bounded):
-        raise ValueError("The essential JEV state exceeds the 24,000-character prompt budget")
+        raise ValueError(
+            "The current visible objects exceed the 24,000-character prompt budget; "
+            "split the frame into smaller object batches"
+        )
     _finalize_prompt_budget(bounded)
     return bounded
 
@@ -242,26 +228,25 @@ def build_given_that(
     modality: str,
     image_size: tuple[int, int] | None,
 ) -> dict[str, Any]:
-    prompt_objects = memory.prompt_objects()[:MAX_OBJECTS]
-    remembered = [public_object(item, include_recent_poses=False) for item in prompt_objects]
+    prompt_objects = memory.prompt_objects()
     visible = [
         public_object(item, include_recent_poses=True)
         for item in prompt_objects
         if item.get("currently_visible")
-    ][:MAX_OBJECTS]
+    ]
     width = image_size[0] if image_size else None
     height = image_size[1] if image_size else None
     state = {
-        "schema_version": 2,
+        "schema_version": 3,
         "user_goal": prompt,
         "camera": {"modality": modality, "image_width": width, "image_height": height},
-        "current_scene": {"visible_objects": visible},
-        "scene_memory": {"revision": memory.revision, "known_objects": remembered},
+        "current_scene": {"revision": memory.revision, "visible_objects": visible},
         "relations": relations_for(visible, memory),
-        "uncertainty": uncertainty_for(remembered),
-        "memory_semantics": (
-            "Persistent camera belief. A new observation is merged by object_id. "
-            "JEV does not see pixels; these facts are the only scene evidence."
+        "uncertainty": uncertainty_for(visible),
+        "state_semantics": (
+            "Only objects detected in the current sampled frame are listed. "
+            "Object ids are stable tracking references. JEV does not see pixels; "
+            "these facts are the only scene evidence."
         ),
     }
     return fit_prompt_budget(state)

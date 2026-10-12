@@ -7,5 +7,8 @@ __pycache__/
 *.pth
 .idea/
 .vscode/
+.cursor/
+.cursor/rules/
+AGENTS.md
 scripts/
 tests/
