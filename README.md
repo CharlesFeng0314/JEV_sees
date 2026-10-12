@@ -4,7 +4,7 @@
 
 ### Let JEV understand images and video—and turn visual judgments into program-ready output.
 
-Give it an image, a video, or an RGB-D camera. JEV Sees discovers objects, keeps track of the same object over time, builds scene memory, and lets JEV answer your questions with a choice, probability, or score.
+**JEV is fast, structured, and built to make decisions.**
 
 [JEV](https://typesafe.ai/blog/introducing-system-one-models-and-jev) is the first **System One Model** released by [TypeSafe AI](https://typesafe.ai/), built for fast, structured decisions inside software. JEV, the System One API, and `typesafe-sdk` are all provided by TypeSafe AI. **JEV Sees is my independent open-source project built on those capabilities; it is not an official TypeSafe AI vision product.**
 

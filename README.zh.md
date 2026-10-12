@@ -4,7 +4,7 @@
 
 ### 让 JEV 看懂图片和视频，把视觉判断直接交给程序。
 
-给它一张图片、一段视频或一个 RGB-D 相机。JEV Sees 会发现目标、持续跟踪同一个对象、组织场景记忆，然后让 JEV 对你定义的问题返回 choice、probability 或 score。
+**JEV 很会判断：快、结构化，而且天然适合做封闭式决策。**
 
 [JEV](https://typesafe.ai/blog/introducing-system-one-models-and-jev) 是 [TypeSafe AI](https://typesafe.ai/) 发布的首个 **System One Model**，专门面向软件中的快速、结构化决策。JEV、System One API 和 `typesafe-sdk` 都由 TypeSafe AI 提供；**JEV Sees 是我基于这些能力开发的独立开源项目，并非 TypeSafe AI 的官方视觉产品。**
 
