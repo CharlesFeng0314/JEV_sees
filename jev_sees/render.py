@@ -249,7 +249,9 @@ def write_visual(frames: list[np.ndarray], path: str | Path, *, fps: float) -> N
     if suffix == ".gif":
         duration = max(40, int(round(1000 / max(fps, 0.1))))
         images = [Image.fromarray(frame) for frame in frames]
-        quant = [image.convert("P", palette=Image.Palette.ADAPTIVE, colors=48) for image in images]
+        # Use the full GIF palette so source footage and small dashboard text
+        # stay legible when GitHub scales the demo down in the README.
+        quant = [image.convert("P", palette=Image.Palette.ADAPTIVE, colors=256) for image in images]
         quant[0].save(destination, save_all=True, append_images=quant[1:], duration=duration, loop=0, optimize=True)
         return
     height, width = frames[0].shape[:2]

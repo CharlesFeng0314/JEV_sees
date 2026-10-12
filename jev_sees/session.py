@@ -423,7 +423,14 @@ class Sees:
         index = origin
         log = JudgmentLog()
         frames: list[Any] = []
-        dashboard = DashboardRenderer() if save is not None else None
+        panel_title = "JEV OUTPUT // STRUCTURED ANSWER"
+        if isinstance(questions, _ObjectQuestionPlan):
+            panel_title = f"SELECTED OBJECTS // {questions.kind.upper()}"
+        dashboard = (
+            DashboardRenderer(panel_title=panel_title)
+            if save is not None
+            else None
+        )
         last: Result | None = None
         last_answers: dict[str, Any] = {}
         try:
