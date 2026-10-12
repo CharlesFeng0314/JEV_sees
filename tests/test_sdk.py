@@ -233,13 +233,14 @@ class GivenThatTests(unittest.TestCase):
         self.assertNotIn("pose_history", payload)
         visible = state["current_scene"]["visible_objects"]
         self.assertEqual(visible[0]["bbox_xyxy"], [10, 20, 100, 80])
-        self.assertEqual(state["schema_version"], 2)
+        self.assertEqual(state["schema_version"], 3)
         color = visible[0]["attributes"]["color_evidence"]
-        self.assertEqual(set(color), {"cv", "clip", "caption"})
+        self.assertEqual(set(color), {"cv", "clip"})
         self.assertEqual(color["cv"]["median_rgb"], [220, 190, 30])
         self.assertEqual(color["clip"]["probabilities"]["yellow"], 0.75)
-        self.assertEqual(color["caption"]["text"], "a yellow bus")
         self.assertNotIn("color", visible[0]["attributes"])
+        self.assertNotIn("description", visible[0])
+        self.assertNotIn("scene_memory", state)
         self.assertTrue(state["relations"])
         self.assertIn("prompt_budget", state)
         self.assertEqual(state["prompt_budget"]["hard_limit_tokens"], 31000)
@@ -266,11 +267,55 @@ class GivenThatTests(unittest.TestCase):
             )
         state = build_given_that("current risk", memory, modality="rgb", image_size=(20, 20))
         visible = state["current_scene"]["visible_objects"][0]
-        known = state["scene_memory"]["known_objects"][0]
         self.assertEqual([item["frame_index"] for item in visible["recent_poses"]], [2, 4])
-        self.assertNotIn("recent_poses", known)
+        self.assertNotIn("scene_memory", state)
 
-    def test_budget_drops_low_priority_objects(self) -> None:
+    def test_given_that_omits_objects_missing_from_the_current_frame(self) -> None:
+        memory = SceneMemory()
+        memory.observe(
+            [
+                {
+                    "object_id": "object_001",
+                    "label": "person",
+                    "bbox_xyxy": [0, 0, 10, 20],
+                    "centroid_uv": [5, 10],
+                }
+            ],
+            frame_index=1,
+            video_time_s=0.1,
+        )
+        memory.observe([], frame_index=2, video_time_s=0.2)
+
+        state = build_given_that("current frame", memory, modality="rgb", image_size=(20, 20))
+
+        self.assertEqual(state["current_scene"]["visible_objects"], [])
+        self.assertIn("object_001", memory.known_objects)
+
+    def test_uncertainty_distinguishes_missing_and_low_confidence(self) -> None:
+        memory = SceneMemory()
+        memory.observe(
+            [
+                {
+                    "object_id": "object_001",
+                    "label": "bus without a detector score",
+                    "bbox_xyxy": [0, 0, 10, 10],
+                    "centroid_uv": [5, 5],
+                },
+                {
+                    "object_id": "object_002",
+                    "label": "low-confidence person",
+                    "confidence": 0.1,
+                    "bbox_xyxy": [20, 0, 30, 10],
+                    "centroid_uv": [25, 5],
+                },
+            ]
+        )
+
+        state = build_given_that("inspect uncertainty", memory, modality="rgb", image_size=(40, 20))
+
+        self.assertEqual(state["uncertainty"], ["Low-confidence visible objects: object_002"])
+
+    def test_budget_keeps_all_visible_object_ids(self) -> None:
         memory = SceneMemory()
         observations = []
         for index in range(30):
@@ -286,13 +331,14 @@ class GivenThatTests(unittest.TestCase):
             )
         memory.observe(observations)
         state = build_given_that("count", memory, modality="rgb", image_size=(100, 100))
-        self.assertLessEqual(len(state["scene_memory"]["known_objects"]), 16)
-        self.assertGreaterEqual(len(state["scene_memory"]["known_objects"]), 4)
+        visible = state["current_scene"]["visible_objects"]
+        self.assertEqual(len(visible), 30)
+        self.assertEqual({item["object_id"] for item in visible}, {f"object_{i:03d}" for i in range(30)})
         self.assertLessEqual(state["prompt_budget"]["serialized_chars"], 24000)
 
 
 class SessionTests(unittest.TestCase):
-    def test_sees_leaves_default_base_url_to_typesafe_sdk(self) -> None:
+    def test_sees_leaves_environment_defaults_to_typesafe_sdk(self) -> None:
         captured = {}
 
         class Client:
@@ -312,8 +358,9 @@ class SessionTests(unittest.TestCase):
             Sees(api_key="test-key")._system_one({}, {})
 
         self.assertIsNone(captured["base_url"])
+        self.assertIsNone(captured["model"])
 
-    def test_sees_preserves_an_explicit_base_url(self) -> None:
+    def test_sees_preserves_explicit_sdk_configuration(self) -> None:
         captured = {}
 
         class Client:
@@ -330,9 +377,14 @@ class SessionTests(unittest.TestCase):
                 return object()
 
         with patch("typesafe_sdk.TypeSafeClient", Client):
-            Sees(api_key="test-key", base_url="https://example.invalid")._system_one({}, {})
+            Sees(
+                api_key="test-key",
+                model="jev-custom",
+                base_url="https://example.invalid",
+            )._system_one({}, {})
 
         self.assertEqual(captured["base_url"], "https://example.invalid")
+        self.assertEqual(captured["model"], "jev-custom")
 
     def test_ask_hides_given_that(self) -> None:
         captured = {}
@@ -508,6 +560,109 @@ class RenderTests(unittest.TestCase):
 
 
 class CallTests(unittest.TestCase):
+    def test_probability_without_for_each_outputs_every_detected_object(self) -> None:
+        captured = {}
+
+        def client(state, questions):
+            captured["questions"] = questions
+
+            class Answer:
+                def __init__(self, probability):
+                    self.noul = probability
+
+            class Response:
+                model = "jev-latest"
+                usage = None
+                answers = {
+                    "object_001": Answer(0.7),
+                    "object_002": Answer(0.2),
+                }
+
+                def model_dump(self):
+                    return {"model": self.model}
+
+            return Response()
+
+        sees = Sees(client=client)
+        sees.observe = lambda image, depth=None, **kwargs: [
+            {"object_id": "object_001", "label": "person", "bbox_xyxy": [0, 0, 4, 8]},
+            {"object_id": "object_002", "label": "car", "bbox_xyxy": [5, 5, 12, 12]},
+        ]
+
+        result = sees.probability(
+            np.zeros((16, 16, 3), dtype=np.uint8),
+            "Is this object involved in a car accident?",
+        )
+
+        self.assertEqual(set(captured["questions"]), {"object_001", "object_002"})
+        self.assertEqual(set(result.answers), {"object_001", "object_002"})
+        self.assertEqual({row["object_id"] for row in result.rows}, {"object_001", "object_002"})
+        self.assertTrue(all("scope_probability" not in row for row in result.rows))
+        self.assertIsNone(result.scope)
+
+    def test_for_each_uses_jev_scope_probabilities_and_keeps_choice_distribution(self) -> None:
+        captured = {}
+
+        def client(state, questions):
+            captured["questions"] = questions
+
+            class Answer:
+                pass
+
+            scope_person = Answer()
+            scope_person.noul = 0.96
+            scope_car = Answer()
+            scope_car.noul = 0.04
+            person = Answer()
+            person.choice = "running"
+            person.confidence = 0.75
+            person.probabilities = {"stationary": 0.05, "walking": 0.2, "running": 0.75}
+            car = Answer()
+            car.choice = "running"
+            car.confidence = 0.9
+            car.probabilities = {"stationary": 0.02, "walking": 0.08, "running": 0.9}
+
+            class Response:
+                model = "jev-latest"
+                usage = None
+                answers = {
+                    "__scope__:object_001": scope_person,
+                    "object_001": person,
+                    "__scope__:object_002": scope_car,
+                    "object_002": car,
+                }
+
+                def model_dump(self):
+                    return {"model": self.model}
+
+            return Response()
+
+        sees = Sees(client=client)
+        sees.observe = lambda image, depth=None, **kwargs: [
+            {"object_id": "object_001", "label": "rabbit", "bbox_xyxy": [0, 0, 4, 8]},
+            {"object_id": "object_002", "label": "car", "bbox_xyxy": [5, 5, 12, 12]},
+        ]
+
+        result = sees.for_each("animal", scope_threshold=0.5).choice(
+            np.zeros((16, 16, 3), dtype=np.uint8),
+            "What is this object's current motion state?",
+            choices=["stationary", "walking", "running"],
+        )
+
+        self.assertEqual(
+            set(captured["questions"]),
+            {
+                "__scope__:object_001",
+                "object_001",
+                "__scope__:object_002",
+                "object_002",
+            },
+        )
+        self.assertEqual(set(result.answers), {"object_001"})
+        self.assertEqual(result.rows[0]["scope_probability"], 0.96)
+        self.assertEqual(result.rows[0]["probabilities"]["running"], 0.75)
+        self.assertEqual(result.scope, {"class": "animal", "threshold": 0.5})
+
     def test_image_question_prints_a_choice_without_a_class_list(self) -> None:
         captured = {}
 
@@ -547,7 +702,7 @@ class CallTests(unittest.TestCase):
         self.assertEqual(result.choice, "blue")
         self.assertIn("blue", str(result))
 
-    def test_video_builds_person_questions_from_tracks(self) -> None:
+    def test_video_routes_a_semantic_class_and_outputs_per_object_probability(self) -> None:
         import tempfile
         from pathlib import Path
 
@@ -561,15 +716,24 @@ class CallTests(unittest.TestCase):
             risk = next(risks)
 
             class Answer:
-                def __init__(self) -> None:
-                    self.noul = risk
+                def __init__(self, probability) -> None:
+                    self.noul = probability
                     self.choice = None
                     self.confidence = None
 
             class Response:
                 model = "jev-latest"
                 usage = None
-                answers = {key: Answer() for key in questions}
+                answers = {
+                    key: Answer(
+                        0.95
+                        if key == "__scope__:object_001"
+                        else 0.05
+                        if key == "__scope__:object_002"
+                        else risk
+                    )
+                    for key in questions
+                }
 
                 def model_dump(self):
                     return {"model": self.model}
@@ -594,29 +758,32 @@ class CallTests(unittest.TestCase):
 
             sees.observe = observe
 
-            def questions(tracks):
-                return {
-                    item["object_id"]: Noul(instructions="accident risk")
-                    for item in tracks
-                    if item["label"] == "person"
-                }
-
-            result = sees(
+            result = sees.for_each("pedestrian").probability(
                 clip,
-                "帮我计算视频中每个行人发生 car accident 的风险",
-                questions,
+                "Is this object currently involved in a car accident?",
                 every=1,
                 json=root / "risk.json",
                 excel=root / "risk.xlsx",
                 save=root / "boxed.gif",
             )
-            self.assertEqual(captured, [["object_001"], ["object_001"]])
+            expected_keys = {
+                "__scope__:object_001",
+                "object_001",
+                "__scope__:object_002",
+                "object_002",
+            }
+            self.assertEqual([set(keys) for keys in captured], [expected_keys, expected_keys])
             self.assertEqual(result.rows[0]["object_id"], "object_001")
             self.assertEqual(result.rows[0]["risk"], 0.8)
+            self.assertEqual(result.rows[0]["scope_probability"], 0.95)
             self.assertEqual(result.rows[0]["peak_frame"], 1)
             self.assertEqual([frame["frame_index"] for frame in result.frames], [0, 1])
             self.assertEqual(result.frames[1]["objects"][0]["probability"], 0.8)
+            self.assertEqual(result.frames[1]["scope"]["class"], "pedestrian")
+            self.assertEqual(result.frames[1]["scope"]["probabilities"]["object_002"], 0.05)
             self.assertTrue((root / "risk.json").is_file())
+            payload = json.loads((root / "risk.json").read_text(encoding="utf-8"))
+            self.assertEqual(payload["for_each"], {"class": "pedestrian", "threshold": 0.5})
             self.assertTrue((root / "risk.xlsx").is_file())
             self.assertTrue((root / "boxed.gif").is_file())
 

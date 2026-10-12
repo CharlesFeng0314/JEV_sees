@@ -11,10 +11,13 @@ _PRINT_ORDER = (
     "video_time_s",
     "object_id",
     "label",
+    "scope_probability",
     "probability",
     "risk",
     "choice",
+    "score",
     "confidence",
+    "probabilities",
     "peak_frame",
 )
 _HIDDEN = {"bbox_xyxy", "_score"}
@@ -49,11 +52,12 @@ class JudgmentLog:
         answers: dict[str, Any],
         *,
         video_time_s: float | None = None,
+        scope: dict[str, Any] | None = None,
     ) -> None:
         by_id = {str(item.get("object_id")): item for item in tracks if item.get("object_id")}
         if frame is not None:
             self.frames.append(
-                _frame_sample(frame, video_time_s, by_id, answers)
+                _frame_sample(frame, video_time_s, by_id, answers, scope=scope)
             )
         if not answers:
             return
@@ -61,11 +65,32 @@ class JudgmentLog:
             track = by_id.get(str(key))
             risk = _number(answer, "noul")
             choice = getattr(answer, "choice", None)
+            score = _number(answer, "score")
             confidence = _number(answer, "confidence")
+            probabilities = _probabilities(answer)
+            scope_probability = _scope_probability(scope, str(key))
             if track is not None and risk is not None:
-                self._peak_risk(frame, str(key), track, risk)
+                self._peak_risk(frame, str(key), track, risk, scope_probability)
             elif track is not None and choice is not None:
-                self._peak_choice(frame, str(key), track, str(choice), confidence)
+                self._peak_choice(
+                    frame,
+                    str(key),
+                    track,
+                    str(choice),
+                    confidence,
+                    probabilities,
+                    scope_probability,
+                )
+            elif track is not None and score is not None:
+                self._peak_score(
+                    frame,
+                    str(key),
+                    track,
+                    score,
+                    confidence,
+                    probabilities,
+                    scope_probability,
+                )
             elif track is None and len(answers) == 1 and choice is not None:
                 self.scene.append(_scene_choice(frame, str(choice), confidence))
             elif track is None and len(answers) == 1 and risk is not None:
@@ -90,12 +115,20 @@ class JudgmentLog:
             return [_best_scene(self.scene)]
         return [dict(self.seen[key]) for key in sorted(self.seen)]
 
-    def _peak_risk(self, frame: int | None, object_id: str, track: dict[str, Any], risk: float) -> None:
+    def _peak_risk(
+        self,
+        frame: int | None,
+        object_id: str,
+        track: dict[str, Any],
+        risk: float,
+        scope_probability: float | None,
+    ) -> None:
         entry = {
             "frame": frame,
             "object_id": object_id,
             "label": track.get("label"),
             "risk": risk,
+            "scope_probability": scope_probability,
             "bbox_xyxy": _bbox(track),
         }
         self.timeline.append({key: value for key, value in entry.items() if value is not None or key == "frame"})
@@ -110,6 +143,8 @@ class JudgmentLog:
             "risk": risk,
             "bbox_xyxy": _bbox(track),
         }
+        if scope_probability is not None:
+            row["scope_probability"] = scope_probability
         if frame is not None:
             row["peak_frame"] = frame
         self.peaks[object_id] = row
@@ -121,6 +156,8 @@ class JudgmentLog:
         track: dict[str, Any],
         choice: str,
         confidence: float | None,
+        probabilities: dict[str, float] | None,
+        scope_probability: float | None,
     ) -> None:
         score = 0.0 if confidence is None else confidence
         sample = {
@@ -128,8 +165,11 @@ class JudgmentLog:
             "label": track.get("label"),
             "choice": choice,
             "confidence": confidence,
+            "probabilities": probabilities,
             "bbox_xyxy": _bbox(track),
         }
+        if scope_probability is not None:
+            sample["scope_probability"] = scope_probability
         if frame is not None:
             sample["frame"] = frame
         self.timeline.append(sample)
@@ -141,9 +181,45 @@ class JudgmentLog:
             "label": track.get("label"),
             "choice": choice,
             "confidence": confidence,
+            "probabilities": probabilities,
             "bbox_xyxy": _bbox(track),
             "_score": score,
         }
+        if scope_probability is not None:
+            row["scope_probability"] = scope_probability
+        if frame is not None:
+            row["peak_frame"] = frame
+        self.peaks[object_id] = row
+
+    def _peak_score(
+        self,
+        frame: int | None,
+        object_id: str,
+        track: dict[str, Any],
+        score: float,
+        confidence: float | None,
+        probabilities: dict[str, float] | None,
+        scope_probability: float | None,
+    ) -> None:
+        sample = {
+            "object_id": object_id,
+            "label": track.get("label"),
+            "score": score,
+            "confidence": confidence,
+            "probabilities": probabilities,
+            "bbox_xyxy": _bbox(track),
+        }
+        if scope_probability is not None:
+            sample["scope_probability"] = scope_probability
+        if frame is not None:
+            sample["frame"] = frame
+        self.timeline.append(sample)
+        previous = self.peaks.get(object_id)
+        score_confidence = 0.0 if confidence is None else confidence
+        if previous is not None and score_confidence < float(previous.get("_score", -1)):
+            return
+        row = {**sample, "_score": score_confidence}
+        row.pop("frame", None)
         if frame is not None:
             row["peak_frame"] = frame
         self.peaks[object_id] = row
@@ -175,6 +251,7 @@ def write_json(
     rows: list[dict[str, Any]],
     timeline: list[dict[str, Any]],
     frames: list[dict[str, Any]] | None = None,
+    scope: dict[str, Any] | None = None,
 ) -> None:
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -185,6 +262,8 @@ def write_json(
         "rows": rows,
         "timeline": timeline,
     }
+    if scope is not None:
+        payload["for_each"] = scope
     destination.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -285,10 +364,14 @@ def _frame_sample(
     video_time_s: float | None,
     tracks: dict[str, dict[str, Any]],
     answers: dict[str, Any],
+    *,
+    scope: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     sample: dict[str, Any] = {"frame_index": int(frame), "objects": []}
     if video_time_s is not None:
         sample["video_time_s"] = round(float(video_time_s), 4)
+    if scope is not None:
+        sample["scope"] = dict(scope)
     for key, answer in answers.items():
         object_id = str(key)
         track = tracks.get(object_id)
@@ -298,15 +381,40 @@ def _frame_sample(
             item["bbox_xyxy"] = _bbox(track)
         risk = _number(answer, "noul")
         choice = getattr(answer, "choice", None)
+        score = _number(answer, "score")
         confidence = _number(answer, "confidence")
+        probabilities = _probabilities(answer)
+        scope_probability = _scope_probability(scope, object_id)
+        if scope_probability is not None:
+            item["scope_probability"] = scope_probability
         if risk is not None:
             item["probability"] = risk
         if choice is not None:
             item["choice"] = str(choice)
         if confidence is not None:
             item["confidence"] = confidence
+        if score is not None:
+            item["score"] = score
+        if probabilities is not None:
+            item["probabilities"] = probabilities
         sample["objects"].append(item)
     return sample
+
+
+def _probabilities(answer: Any) -> dict[str, float] | None:
+    values = getattr(answer, "probabilities", None)
+    if values is None:
+        return None
+    return {str(key): float(value) for key, value in dict(values).items()}
+
+
+def _scope_probability(scope: dict[str, Any] | None, object_id: str) -> float | None:
+    if scope is None:
+        return None
+    probabilities = scope.get("probabilities")
+    if not isinstance(probabilities, dict) or object_id not in probabilities:
+        return None
+    return float(probabilities[object_id])
 
 
 def _cell(value: Any) -> str:
@@ -318,6 +426,8 @@ def _cell(value: Any) -> str:
 
 
 def _excel_cell(value: Any) -> Any:
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     if isinstance(value, (list, tuple)):
         return ",".join(str(part) for part in value)
     return value
