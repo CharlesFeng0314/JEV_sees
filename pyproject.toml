@@ -18,7 +18,7 @@ dependencies = [
     "scipy",
     "scikit-learn",
     "torch",
-    "transformers>=4.49,<5",
+    "transformers==4.49.0",
     "timm",
     "einops",
     "clip @ git+https://github.com/openai/CLIP.git",

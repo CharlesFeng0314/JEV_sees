@@ -19,7 +19,6 @@ from .tracking import TrackBank
 _VIDEO_SUFFIXES = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v"}
 
 DEFAULT_MODEL = "jev-latest"
-DEFAULT_BASE_URL = "https://api.typesafe.ai"
 
 QuestionFactory = Callable[[list[dict[str, Any]]], Mapping[str, Any]]
 QuestionSource = Mapping[str, Any] | QuestionFactory
@@ -33,7 +32,7 @@ class Sees:
         api_key: str | None = None,
         *,
         model: str = DEFAULT_MODEL,
-        base_url: str = DEFAULT_BASE_URL,
+        base_url: str | None = None,
         florence_model: str = DEFAULT_FLORENCE_MODEL,
         clip_model: str | None = None,
         device: str | None = None,
