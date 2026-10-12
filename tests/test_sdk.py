@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 from PIL import Image
@@ -291,6 +292,48 @@ class GivenThatTests(unittest.TestCase):
 
 
 class SessionTests(unittest.TestCase):
+    def test_sees_leaves_default_base_url_to_typesafe_sdk(self) -> None:
+        captured = {}
+
+        class Client:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return False
+
+            def system_one(self, *, state, questions):
+                return object()
+
+        with patch("typesafe_sdk.TypeSafeClient", Client):
+            Sees(api_key="test-key")._system_one({}, {})
+
+        self.assertIsNone(captured["base_url"])
+
+    def test_sees_preserves_an_explicit_base_url(self) -> None:
+        captured = {}
+
+        class Client:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return False
+
+            def system_one(self, *, state, questions):
+                return object()
+
+        with patch("typesafe_sdk.TypeSafeClient", Client):
+            Sees(api_key="test-key", base_url="https://example.invalid")._system_one({}, {})
+
+        self.assertEqual(captured["base_url"], "https://example.invalid")
+
     def test_ask_hides_given_that(self) -> None:
         captured = {}
 
