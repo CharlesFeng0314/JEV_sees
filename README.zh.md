@@ -216,6 +216,24 @@ object ID 会在连续采样帧间保持稳定，因此结果可以直接画图�
 Sees(florence_model="microsoft/Florence-2-large-ft")
 ```
 
+`vision` 決定問 JEV 之前要跑哪些本地模型。預設是 `jev+florence`。
+
+- `jev`：不跑本地檢測器，整張畫面當成一個物件。
+- `jev+yolo`：YOLO 出框和類別，再交給 JEV。
+- `jev+yolo+florence`：重疊的框保留 YOLO 類別，Florence 補上描述，以及 YOLO 沒框到的區域。
+
+使用 YOLO 前要安裝可選依賴。顏色證據仍由 CLIP 提供。預設權重是 Ultralytics 的 `yolo11n.pt`，也可以換成任何 `.pt` checkpoint。
+
+```bash
+python -m pip install -e ".[yolo]"
+```
+
+```python
+Sees(vision="jev")
+Sees(vision="jev+yolo", yolo_model="model/best_bymandy.pt")
+Sees(vision="jev+yolo+florence", yolo_model="model/best_bymandy.pt")
+```
+
 如果 `JEV_SEES_ROBO_ROOT` 指向的项目中存在 `weights/clip/ViT-B-32.pt`，JEV Sees 会使用这份本地 CLIP 权重；否则会在首次使用时下载。模型权重不会提交到本仓库。
 
 ---

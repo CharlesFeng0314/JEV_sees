@@ -36,7 +36,7 @@ def perceive_rgb(runtime: VisionRuntime, rgb: np.ndarray) -> list[dict[str, Any]
                 }
             },
             "description": description,
-            "source": "rgb_florence_dense_region_clip",
+            "source": _observation_source(runtime, "rgb"),
         }
         if detection.get("score") is not None:
             observation["confidence"] = float(detection["score"])
@@ -134,13 +134,29 @@ def perceive_rgbd(
             "partial_view": edge,
             "detector_label": facts.get("detector_label"),
             "detector_match": facts.get("detector_match"),
-            "source": "rgbd_cluster_florence",
+            "source": _observation_source(runtime, "rgbd"),
             "mask_area_px": facts["area_px"],
         }
         if facts.get("detector_match") is not None:
             observation["confidence"] = float(facts["detector_match"])
         observations.append(observation)
     return observations
+
+
+def _observation_source(runtime: VisionRuntime, modality: str) -> str:
+    vision = getattr(runtime, "vision", None)
+    if vision == "jev":
+        return f"{modality}_jev"
+    if vision == "jev+yolo":
+        return f"{modality}_yolo_clip"
+    if vision == "jev+yolo+florence":
+        return f"{modality}_yolo_florence_clip"
+    if getattr(runtime, "detector", "florence") == "yolo":
+        return f"{modality}_yolo_clip"
+    return {
+        "rgb": "rgb_florence_dense_region_clip",
+        "rgbd": "rgbd_cluster_florence",
+    }[modality]
 
 
 def _clip_color_evidence(runtime: VisionRuntime, crops: list[Image.Image]) -> list[dict[str, Any]]:

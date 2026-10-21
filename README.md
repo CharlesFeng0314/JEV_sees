@@ -216,6 +216,24 @@ Image and video perception run locally. The default detector/captioner is `micro
 Sees(florence_model="microsoft/Florence-2-large-ft")
 ```
 
+`vision` chooses which local models run before JEV answers. The default is `jev+florence`.
+
+- `jev`: no local detector. The whole frame is one object.
+- `jev+yolo`: YOLO boxes and class names, then JEV.
+- `jev+yolo+florence`: YOLO classes stay on overlapping boxes, Florence adds a caption and any region YOLO missed.
+
+Install the optional extra before using YOLO. Color evidence still comes from CLIP. The default weight is Ultralytics `yolo11n.pt`; any `.pt` checkpoint works.
+
+```bash
+python -m pip install -e ".[yolo]"
+```
+
+```python
+Sees(vision="jev")
+Sees(vision="jev+yolo", yolo_model="model/best_bymandy.pt")
+Sees(vision="jev+yolo+florence", yolo_model="model/best_bymandy.pt")
+```
+
 If `JEV_SEES_ROBO_ROOT` points to a project containing `weights/clip/ViT-B-32.pt`, JEV Sees uses that local CLIP weight. Otherwise it downloads the weight on first use. Model weights are not committed to this repository.
 
 ---

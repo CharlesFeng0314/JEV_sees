@@ -165,6 +165,10 @@ class Sees:
         florence_model: str = DEFAULT_FLORENCE_MODEL,
         clip_model: str | None = None,
         device: str | None = None,
+        detector: str = "florence",
+        vision: str | None = None,
+        yolo_model: str = "yolo11n.pt",
+        yolo_confidence: float = 0.25,
         perceptor: Any = None,
         client: Any = None,
     ):
@@ -175,6 +179,10 @@ class Sees:
         self._florence_model = florence_model
         self._clip_model = clip_model
         self._device = device
+        self._detector = detector
+        self._vision_mode = vision
+        self._yolo_model = yolo_model
+        self._yolo_confidence = yolo_confidence
         self._runtime: Any = perceptor
         self.memory = SceneMemory()
         self.tracks = TrackBank("image")
@@ -497,6 +505,10 @@ class Sees:
                 florence_model=self._florence_model,
                 clip_path=self._clip_model,
                 device=self._device,
+                detector=self._detector,
+                vision=self._vision_mode,
+                yolo_model=self._yolo_model,
+                yolo_confidence=self._yolo_confidence,
             )
         return self._runtime
 

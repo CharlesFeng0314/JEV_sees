@@ -11,7 +11,11 @@ from .color import COLOR_NAMES
 from .paths import clip_weight
 
 DEFAULT_FLORENCE_MODEL = "microsoft/Florence-2-base-ft"
+DEFAULT_YOLO_MODEL = "yolo11n.pt"
 DENSE_REGION_CAPTION = "<DENSE_REGION_CAPTION>"
+DETECTORS = ("florence", "yolo")
+VISIONS = ("jev", "jev+florence", "jev+yolo", "jev+yolo+florence")
+_MERGE_IOU = 0.5
 
 
 class VisionRuntime:
@@ -23,12 +27,25 @@ class VisionRuntime:
         florence_model: str = DEFAULT_FLORENCE_MODEL,
         clip_path: str | None = None,
         device: str | None = None,
+        detector: str = "florence",
+        vision: str | None = None,
+        yolo_model: str = DEFAULT_YOLO_MODEL,
+        yolo_confidence: float = 0.25,
     ):
+        selected = _resolve_vision(detector, vision)
+        confidence = float(yolo_confidence)
+        if not 0.0 <= confidence <= 1.0:
+            raise ValueError("yolo_confidence must be between 0 and 1")
         self.florence_model = florence_model
         self.clip_path = clip_path or clip_weight()
         self.device = device
+        self.vision = selected
+        self.detector = _detector_name(selected)
+        self.yolo_model = yolo_model
+        self.yolo_confidence = confidence
         self._florence: Any = None
         self._processor: Any = None
+        self._yolo: Any = None
         self._clip: Any = None
         self._preprocess: Any = None
         self._torch: Any = None
@@ -72,7 +89,30 @@ class VisionRuntime:
         self._clip, self._preprocess = clip.load(self.clip_path, device=device)
         self._clip.eval()
 
+    def _ensure_yolo(self) -> None:
+        if self._yolo is not None:
+            return
+        try:
+            from ultralytics import YOLO
+        except ImportError as exc:
+            raise ImportError(
+                "YOLO detection needs the optional ultralytics package. "
+                "Install it with: python -m pip install ultralytics"
+            ) from exc
+        self._yolo = YOLO(self.yolo_model)
+
     def detect(self, rgb: np.ndarray) -> list[dict[str, Any]]:
+        """Return boxes and labels for the selected vision stack."""
+
+        if self.vision == "jev":
+            return _frame_detection(rgb)
+        yolo = self._detect_yolo(rgb) if "yolo" in self.vision else None
+        florence = self._detect_florence(rgb) if "florence" in self.vision else None
+        if yolo is not None and florence is not None:
+            return _merge_yolo_florence(yolo, florence)
+        return yolo if yolo is not None else florence or []
+
+    def _detect_florence(self, rgb: np.ndarray) -> list[dict[str, Any]]:
         """Return Florence-2 dense regions and their generated descriptions."""
 
         self._ensure_florence()
@@ -106,11 +146,26 @@ class VisionRuntime:
         )
         return _dense_regions(parsed, image.size)
 
+    def _detect_yolo(self, rgb: np.ndarray) -> list[dict[str, Any]]:
+        """Return COCO-style class names, scores, and boxes from Ultralytics."""
+
+        self._ensure_yolo()
+        image = Image.fromarray(np.ascontiguousarray(rgb))
+        results = self._yolo.predict(
+            source=image,
+            conf=self.yolo_confidence,
+            verbose=False,
+            device=self._device(),
+        )
+        if not results:
+            return []
+        return _yolo_regions(results[0], image.size)
+
     def classify_crops(self, crops: list[Image.Image], labels: list[str]) -> list[dict[str, float]]:
         """Compare crops with explicit attributes such as color names.
 
         This is intentionally not used for object discovery. Object labels come
-        from Florence-2; callers never provide an object vocabulary.
+        from the selected detector; callers never provide an object vocabulary.
         """
 
         self._ensure_clip()
@@ -173,6 +228,81 @@ class VisionRuntime:
         return stacked
 
 
+def _resolve_vision(detector: str, vision: str | None) -> str:
+    """Map the public stack names, including the older detector switch."""
+
+    if vision is None:
+        name = str(detector).strip().lower()
+        if name == "yolo":
+            return "jev+yolo"
+        if name == "florence":
+            return "jev+florence"
+        raise ValueError(f"detector must be one of: {', '.join(DETECTORS)}")
+    name = "".join(str(vision).split()).lower()
+    aliases = {
+        "jev": "jev",
+        "florence": "jev+florence",
+        "jev+florence": "jev+florence",
+        "yolo": "jev+yolo",
+        "jev+yolo": "jev+yolo",
+        "yolo+florence": "jev+yolo+florence",
+        "jev+yolo+florence": "jev+yolo+florence",
+    }
+    if name not in aliases:
+        raise ValueError(f"vision must be one of: {', '.join(VISIONS)}")
+    return aliases[name]
+
+
+def _detector_name(vision: str) -> str:
+    if vision == "jev+yolo":
+        return "yolo"
+    if vision == "jev":
+        return "jev"
+    if vision == "jev+yolo+florence":
+        return "yolo+florence"
+    return "florence"
+
+
+def _frame_detection(rgb: np.ndarray) -> list[dict[str, Any]]:
+    """One full-frame object so JEV can answer without a local detector."""
+
+    height, width = rgb.shape[:2]
+    return [
+        {
+            "label": "scene",
+            "description": "the whole frame",
+            "bbox_xyxy": [0.0, 0.0, float(width), float(height)],
+        }
+    ]
+
+
+def _merge_yolo_florence(
+    yolo_rows: list[dict[str, Any]],
+    florence_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep YOLO classes, attach an overlapping Florence caption, and add the rest."""
+
+    from .tracking import box_iou
+
+    merged = [dict(item) for item in yolo_rows]
+    for region in florence_rows:
+        best_index = None
+        best_iou = 0.0
+        for index, kept in enumerate(merged):
+            overlap = box_iou(region.get("bbox_xyxy") or [], kept.get("bbox_xyxy") or [])
+            if overlap >= _MERGE_IOU and overlap > best_iou:
+                best_iou = overlap
+                best_index = index
+        if best_index is None:
+            merged.append(dict(region))
+            continue
+        caption = str(region.get("description") or region.get("label") or "").strip()
+        label = str(merged[best_index].get("label") or "").strip()
+        if caption and caption != label:
+            merged[best_index]["description"] = caption
+    return merged
+
+
 def _dense_regions(parsed: Any, image_size: tuple[int, int]) -> list[dict[str, Any]]:
     """Normalize Florence's post-processed dense-region response."""
 
@@ -197,4 +327,39 @@ def _dense_regions(parsed: Any, image_size: tuple[int, int]) -> list[dict[str, A
                 "bbox_xyxy": [x1, y1, x2, y2],
             }
         )
+    return detections
+
+
+def _yolo_regions(result: Any, image_size: tuple[int, int]) -> list[dict[str, Any]]:
+    """Normalize one Ultralytics result into the shared detection shape."""
+
+    boxes = getattr(result, "boxes", None)
+    xyxy = getattr(boxes, "xyxy", None)
+    if boxes is None or xyxy is None or len(xyxy) == 0:
+        return []
+    names = getattr(result, "names", {}) or {}
+    coordinates = xyxy.detach().cpu().tolist()
+    confidences = boxes.conf.detach().cpu().tolist() if getattr(boxes, "conf", None) is not None else []
+    classes = boxes.cls.detach().cpu().tolist() if getattr(boxes, "cls", None) is not None else []
+    width, height = image_size
+    detections = []
+    for index, box in enumerate(coordinates):
+        if not isinstance(box, (list, tuple)) or len(box) != 4:
+            continue
+        x1, y1, x2, y2 = [float(value) for value in box]
+        x1, x2 = sorted((max(0.0, x1), min(float(width), x2)))
+        y1, y2 = sorted((max(0.0, y1), min(float(height), y2)))
+        if x2 <= x1 or y2 <= y1:
+            continue
+        class_id = int(classes[index]) if index < len(classes) else None
+        raw_label = names.get(class_id, class_id) if isinstance(names, dict) else class_id
+        label = " ".join(str(raw_label).split()).strip() or "object"
+        detection: dict[str, Any] = {
+            "label": label,
+            "description": label,
+            "bbox_xyxy": [x1, y1, x2, y2],
+        }
+        if index < len(confidences):
+            detection["score"] = float(confidences[index])
+        detections.append(detection)
     return detections

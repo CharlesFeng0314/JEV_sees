@@ -27,6 +27,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+yolo = ["ultralytics"]
 
 [tool.setuptools.packages.find]
 include = ["jev_sees*"]

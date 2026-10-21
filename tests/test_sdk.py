@@ -10,13 +10,20 @@ import numpy as np
 from PIL import Image
 from typesafe_sdk import Choice, Noul
 
+# the file we created in this repo
 from jev_sees.color import cv_color_evidence
 from jev_sees.given_that import build_given_that
 from jev_sees.memory import SceneMemory
 from jev_sees.render import DashboardRenderer
 from jev_sees.report import JudgmentLog, write_excel, write_json
 from jev_sees.result import Result
-from jev_sees.runtime import DENSE_REGION_CAPTION, VisionRuntime, _dense_regions
+from jev_sees.runtime import (
+    DENSE_REGION_CAPTION,
+    VisionRuntime,
+    _dense_regions,
+    _merge_yolo_florence,
+    _yolo_regions,
+)
 from jev_sees.session import Sees
 from jev_sees.tracking import TrackBank, box_gap, box_iou
 
@@ -76,6 +83,167 @@ class PerceptionTests(unittest.TestCase):
                 },
             ],
         )
+
+    def test_yolo_regions_use_class_names_and_scores(self) -> None:
+        class Values:
+            def __init__(self, values: list) -> None:
+                self._values = values
+
+            def detach(self) -> Values:
+                return self
+
+            def cpu(self) -> Values:
+                return self
+
+            def tolist(self) -> list:
+                return self._values
+
+            def __len__(self) -> int:
+                return len(self._values)
+
+        class Boxes:
+            xyxy = Values([[-4.0, 1.0, 30.0, 18.0], [1.0, 1.0, 1.0, 4.0]])
+            conf = Values([0.91, 0.2])
+            cls = Values([5.0, 0.0])
+
+        class Result:
+            names = {5: "bus"}
+            boxes = Boxes()
+
+        regions = _yolo_regions(Result(), (20, 12))
+
+        self.assertEqual(
+            regions,
+            [
+                {
+                    "label": "bus",
+                    "description": "bus",
+                    "bbox_xyxy": [0.0, 1.0, 20.0, 12.0],
+                    "score": 0.91,
+                }
+            ],
+        )
+
+    def test_sees_yolo_detector_names_tracked_objects(self) -> None:
+        class Values:
+            def __init__(self, values: list) -> None:
+                self._values = values
+
+            def detach(self) -> Values:
+                return self
+
+            def cpu(self) -> Values:
+                return self
+
+            def tolist(self) -> list:
+                return self._values
+
+            def __len__(self) -> int:
+                return len(self._values)
+
+        class Boxes:
+            xyxy = Values([[1.0, 1.0, 7.0, 7.0]])
+            conf = Values([0.88])
+            cls = Values([0.0])
+
+        class Result:
+            names = {0: "bus"}
+            boxes = Boxes()
+
+        class FakeYolo:
+            def predict(self, source, **kwargs):
+                return [Result()]
+
+        sees = Sees(detector="yolo", yolo_model="unused.pt")
+        runtime = sees._vision()
+        runtime._yolo = FakeYolo()
+        runtime.color_evidence = lambda crops: [
+            {"label": "blue", "confidence": 1.0, "probabilities": {"blue": 1.0}}
+            for _crop in crops
+        ]
+        tracks = sees.observe(np.zeros((8, 8, 3), dtype=np.uint8))
+
+        self.assertEqual(runtime.detector, "yolo")
+        self.assertEqual(tracks[0]["label"], "bus")
+        self.assertEqual(tracks[0]["confidence"], 0.88)
+        self.assertEqual(tracks[0]["source"], "rgb_yolo_clip")
+
+    def test_unknown_detector_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            VisionRuntime(detector="sam")
+
+    def test_merge_keeps_yolo_class_and_florence_caption(self) -> None:
+        merged = _merge_yolo_florence(
+            [
+                {
+                    "label": "Safety_Vest",
+                    "description": "Safety_Vest",
+                    "bbox_xyxy": [1.0, 1.0, 7.0, 7.0],
+                    "score": 0.9,
+                }
+            ],
+            [
+                {
+                    "label": "a person in a yellow vest",
+                    "description": "a person in a yellow vest",
+                    "bbox_xyxy": [1.0, 1.0, 7.0, 7.0],
+                },
+                {
+                    "label": "bus",
+                    "description": "bus",
+                    "bbox_xyxy": [0.0, 0.0, 2.0, 2.0],
+                },
+            ],
+        )
+
+        self.assertEqual(merged[0]["label"], "Safety_Vest")
+        self.assertEqual(merged[0]["description"], "a person in a yellow vest")
+        self.assertEqual(merged[0]["score"], 0.9)
+        self.assertEqual(merged[1]["label"], "bus")
+
+    def test_jev_only_uses_the_whole_frame(self) -> None:
+        sees = Sees(vision="jev")
+        runtime = sees._vision()
+        runtime.color_evidence = lambda crops: [
+            {"label": "blue", "confidence": 1.0, "probabilities": {"blue": 1.0}}
+            for _crop in crops
+        ]
+        tracks = sees.observe(np.zeros((8, 10, 3), dtype=np.uint8))
+
+        self.assertEqual(runtime.vision, "jev")
+        self.assertEqual(len(tracks), 1)
+        self.assertEqual(tracks[0]["label"], "scene")
+        self.assertEqual(tracks[0]["bbox_xyxy"], [0, 0, 10, 8])
+        self.assertEqual(tracks[0]["source"], "rgb_jev")
+
+    def test_combined_stack_keeps_both_detectors(self) -> None:
+        sees = Sees(vision="jev+yolo+florence", yolo_model="unused.pt")
+        runtime = sees._vision()
+        runtime._detect_yolo = lambda rgb: [
+            {
+                "label": "Safety_Vest",
+                "description": "Safety_Vest",
+                "bbox_xyxy": [1.0, 1.0, 7.0, 7.0],
+                "score": 0.9,
+            }
+        ]
+        runtime._detect_florence = lambda rgb: [
+            {
+                "label": "a person in a yellow vest",
+                "description": "a person in a yellow vest",
+                "bbox_xyxy": [1.0, 1.0, 7.0, 7.0],
+            }
+        ]
+        runtime.color_evidence = lambda crops: [
+            {"label": "yellow", "confidence": 1.0, "probabilities": {"yellow": 1.0}}
+            for _crop in crops
+        ]
+        tracks = sees.observe(np.zeros((8, 8, 3), dtype=np.uint8))
+
+        self.assertEqual(len(tracks), 1)
+        self.assertEqual(tracks[0]["label"], "Safety_Vest")
+        self.assertEqual(tracks[0]["description"], "a person in a yellow vest")
+        self.assertEqual(tracks[0]["source"], "rgb_yolo_florence_clip")
 
     def test_sees_accepts_an_autonomous_perceptor(self) -> None:
         class Perceptor:
